@@ -1,6 +1,6 @@
 from functools import partial
 from time import localtime, strftime, time
-from tkinter import BOTH, BOTTOM, HORIZONTAL, LEFT, NW, X, Y, Canvas, Frame, Label, LabelFrame, Menu, PhotoImage, Scrollbar, Tk, Button, Toplevel, Scale
+from tkinter import BOTH, BOTTOM, DISABLED, END, HORIZONTAL, LEFT, NW, X, Y, Canvas, Entry, Frame, Label, LabelFrame, Menu, PhotoImage, Scrollbar, Tk, Button, Toplevel, Scale
 from tkinter.font import BOLD, Font
 from tkinter.ttk import Notebook
 import tkinter.messagebox as msgbox
@@ -76,18 +76,29 @@ class Motion():
     def __init__(self) -> None: ...
 
 class SpriteData():
-    def __init__(self, name:str) -> None:
+    def __init__(self, page, name:str) -> None:
         self.uuid = GetUUID()
+        self.page = page
+        self.init_name = name
+
+        self.page.add_sprite(self)
         DataDict[self.uuid] = self
-    def show(self):
         UIDict[self.uuid] = SpriteUI(self.uuid)
+    def draw(self):
+        self.UI.draw()
     @property
     def UI(self): return UIDict[self.uuid]
 class SpriteUI():
     def __init__(self, uuid:str) -> None:
         self.uuid = uuid
     @property
-    def data(self): return DataDict[self.uuid]
+    def data(self)->SpriteData: return DataDict[self.uuid]
+    def draw(self):
+        self.frame_sprite_list = Frame(self.data.page.UI.frame_sprite_list)
+        self.frame_sprite_list.pack(fill=X)
+        self.entry_sprite_name_list = Entry(self.frame_sprite_list)
+        self.entry_sprite_name_list.insert(END, self.data.init_name)
+        self.entry_sprite_name_list.pack()
 
 class PageData():
     def __init__(self, project, name:str, length:int) -> None:
@@ -101,28 +112,31 @@ class PageData():
         DataDict[self.uuid] = self
 
         self.project.add_page(self)
-    def show(self):
-        [sprite.show() for sprite in self.sprites]
         UIDict[self.uuid] = PageUI(self.uuid)
+    def add_sprite(self, sd: SpriteData):
+        self.sprites.append(sd)
+    def draw(self):
+        #[sprite.draw() for sprite in self.sprites]
+        self.UI.draw()
     @property
     def UI(self): return UIDict[self.uuid]
 class PageUI():
     def __init__(self, uuid:str) -> None:
         self.uuid = uuid
+
+        print(self.data.project.UI.pageBarFrame)
+        self.btn_page = Button(self.data.project.UI.pageBarFrame, text=self.data.name+"\n("+str(self.data.length)+" tick)", width=10, height=40, command=lambda: self.data.project.UI.focus_page(self))
+        self.btn_page.pack(side=LEFT)
     @property
     def data(self): return DataDict[self.uuid]
-    def show(self) -> None:
+    def draw(self) -> None:
         #self.TEST = Button(UIDict[self.data.project.uuid].workspace)
         #self.TEST.place(x=10, y=10)
 
         project_ui = UIDict[self.data.project.uuid]
         workspace:Frame = project_ui.workspace
 
-        self.btn_page = Button(project_ui.pageBarFrame, text=self.data.name+"\n("+str(self.data.length)+" tick)", width=10, height=40)
-        self.btn_page.pack(side=LEFT)
-
         self.frame = Frame(workspace, bg="#FFFFFF")
-        self.frame.place(x=0, y=0, relwidth=1, relheight=1)#width=workspace.place_info()["width"], height=workspace.place_info()["height"])
 
         self.frame_split_left = Frame(self.frame)
         self.frame_split_left.place(x=10, y=10, relwidth=0.4, relheight=1)
@@ -143,10 +157,16 @@ class PageUI():
         self.btn_video_start.pack(side=LEFT)
         self.scale_time = Scale(self.frame_video_control, orient=HORIZONTAL, fg="#007AD9", troughcolor="#FFFFFF", bg="#007AD9", showvalue=False, length=300, sliderlength=10, sliderrelief="flat")
         self.scale_time.pack(side=LEFT, fill=Y)
-
+        
         self.frame_sprite_list = ScrollableFrame(self.frame_split_left, bg="#F0F0F0")
         self.frame_sprite_list.place(relx=0, rely=0.4, relwidth=1, relheight=0.588)
-        [Label(self.frame_sprite_list, text=str(i)+"번째 스프라이트입니다!").pack() for i in range(100)]
+        #[Label(self.frame_sprite_list, text=str(i)+"번째 스프라이트입니다!").pack() for i in range(100)]
+
+        self.data.sprites[0].draw()
+    def focus(self): 
+        self.frame.place(x=0, y=0, relwidth=1, relheight=1)#width=workspace.place_info()["width"], height=workspace.place_info()["height"])
+    def unfocus(self):
+        self.frame.place_forget()
 
 class ProjectData():
     def __init__(self, name:str="untitled") -> None:
@@ -155,11 +175,13 @@ class ProjectData():
         DataDict[self.uuid] = self
 
         self.pages:List[PageData] = []
-    def show(self):
+
+        
         global UIDict
         UIDict = {self.uuid:ProjectUI(self.uuid)}
-        [page.show() for page in self.pages]
-        UIDict[self.uuid].show()
+    def draw(self):
+        #[page.draw() for page in self.pages]
+        UIDict[self.uuid].draw()
     def add_page(self, page: PageData):
         self.pages.append(page)
     @property
@@ -170,7 +192,7 @@ class ProjectUI():
 
 
         #Make Tk Window
-        self.x, self.y = 1400, 800
+        self.x, self.y = 1400, 750
         window.title(self.data.name)
         window.geometry(str(self.x)+"x"+str(self.y))
         window.resizable(0, 0)
@@ -215,17 +237,24 @@ class ProjectUI():
         except: ...
         self.label_license = Label(self.frame_license, text=GlobalData[__type], justify=LEFT)
         self.label_license.pack(fill=BOTH)
+    def focus_page(self, page: PageData):
+        [UIDict[page.uuid].unfocus() for page in self.data.pages]
+        page.focus()
     @property
     def data(self): return DataDict[self.uuid]
-    def show(self):
+    def draw(self):
         #[btn.pack_forget() for btn in self.pageButton]
         #del self.pageButton
-        [UIDict[page.uuid].show() for page in self.data.pages]
+        [UIDict[page.uuid].draw() for page in self.data.pages]
+        self.data.pages[0].UI.focus()
         GlobalData["sys.winRunning"] = True
         window.deiconify()
         window.mainloop()
 pro = ProjectData()
-PageData(pro, "asdf1", 10)
-PageData(pro, "asdf2", 50)
-PageData(pro, "asdf3", 5)
-pro.show()
+pd1 = PageData(pro, "asdf1", 10)
+pd2 = PageData(pro, "asdf2", 50)
+pd3 = PageData(pro, "asdf3", 5)
+SpriteData(pd1, "Circle1")
+SpriteData(pd2, "Circle2")
+SpriteData(pd3, "Circle3")
+pro.draw()
