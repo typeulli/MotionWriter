@@ -1,8 +1,8 @@
 from functools import partial
 from time import localtime, strftime, time
-from tkinter import BOTH, BOTTOM, DISABLED, END, HORIZONTAL, LEFT, NW, X, Y, Canvas, Entry, Frame, Label, LabelFrame, Menu, PhotoImage, Scrollbar, Tk, Button, Toplevel, Scale
+from tkinter import BOTH, BOTTOM, DISABLED, END, HORIZONTAL, LEFT, NW, RIGHT, S, TOP, X, Y, Canvas, Entry, Frame, Label, LabelFrame, Menu, PhotoImage, Scrollbar, Tk, Button, Toplevel, Scale
 from tkinter.font import BOLD, Font
-from tkinter.ttk import Notebook
+from tkinter.ttk import Combobox, Notebook
 import tkinter.messagebox as msgbox
 from typing import Any, Dict, List, Literal, Union
 from uuid import uuid4
@@ -12,21 +12,22 @@ from hashlib import sha256
 
 folder = dirname(realpath(__file__)) + "\\"
 
+window = Tk()
+window.withdraw()
+
 AllUUID:List[str] = []
 DataDict:Dict[str, Any] = {}
 UIDict:Dict[str, Any] = {}
 GlobalData:Dict[str, Any] = {
-    "img.error":None,
+    "img.error":PhotoImage(file=folder+"res\\error.png"),
 
-    "font.noto.ui":folder+"res\\NotoSansKR-Medium.otf",
-    "font.noto.text":folder+"res\\NotoSansKR-Medium.otf",
+    "font.noto.ui":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=10),
+    "font.noto.text":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=14, weight=BOLD),
 
     "license.MotionWriter":(folder+"res\\license\\MotionWriter.txt", "21c92ee89975a5972f20eb1e1aa9882ec0aead02fc8995c6607657b4d8d6354b"),
     "license.Google Open Font":(folder+"res\\license\\Google Open Font.txt", "02d198273c4badb4046f253170297fb3eb3b38dd6c7b445c3c4a53f21bee360e")
 }
-
-window = Tk()
-window.withdraw()
+window.option_add("*Font", GlobalData["font.noto.ui"])
 
 def logger(_type: Literal["INFO", "WARN", "ERROR"], _string: str, _code: str, _source: str = "Log"):
     text = "[" + strftime('%H:%M:%S', localtime(time())) + "] ["+_type+"] [" + _source + " :: " + _code +"] " + _string
@@ -54,11 +55,10 @@ class ScrollableFrame(Frame):
                 scrollregion=self.__canvas.bbox("all")
         ))
         
-        self.__canvas.create_window((0,0), window=self, anchor="nw")
-        self.__canvas.configure(yscrollcommand=self.__scroll.set)
-        
         self.__canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.__scroll.pack(side="right", fill="y")
+        self.__canvas.create_window((0,0), window=self, anchor="nw", width=float(self.__canvas.cget("width"))*1.425, height=float(self.__canvas.cget("height"))*1.5)
+        self.__canvas.configure(yscrollcommand=self.__scroll.set)
 
         self.pack, self.grid, self.place = self.__frame_master.pack, self.__frame_master.grid, self.__frame_master.place
 
@@ -76,12 +76,12 @@ class Motion():
     def __init__(self) -> None: ...
 
 class SpriteData():
-    def __init__(self, page, name:str) -> None:
+    def __init__(self, scene, name:str) -> None:
         self.uuid = GetUUID()
-        self.page = page
+        self.scene = scene
         self.init_name = name
 
-        self.page.add_sprite(self)
+        self.scene.add_sprite(self)
         DataDict[self.uuid] = self
         UIDict[self.uuid] = SpriteUI(self.uuid)
     def draw(self):
@@ -89,18 +89,21 @@ class SpriteData():
     @property
     def UI(self): return UIDict[self.uuid]
 class SpriteUI():
-    def __init__(self, uuid:str) -> None:
-        self.uuid = uuid
+    def __init__(self, uuid:str) -> None: self.uuid = uuid
     @property
     def data(self)->SpriteData: return DataDict[self.uuid]
+    @property
+    def name(self)->str: return self.entry_sprite_name_list.get()
     def draw(self):
-        self.frame_sprite_list = Frame(self.data.page.UI.frame_sprite_list)
+        self.frame_sprite_list = Frame(self.data.scene.UI.frame_sprite_list)
         self.frame_sprite_list.pack(fill=X)
-        self.entry_sprite_name_list = Entry(self.frame_sprite_list)
+        self.frame_sprite_list_up = Frame(self.frame_sprite_list, bg="#FFFFFF")
+        self.frame_sprite_list_up.pack(fill=X, side=TOP)
+        self.entry_sprite_name_list = Entry(self.frame_sprite_list_up)
         self.entry_sprite_name_list.insert(END, self.data.init_name)
-        self.entry_sprite_name_list.pack()
+        self.entry_sprite_name_list.pack(side=LEFT)
 
-class PageData():
+class SceneData():
     def __init__(self, project, name:str, length:int) -> None:
         self.project = project
         self.name = name
@@ -111,8 +114,8 @@ class PageData():
 
         DataDict[self.uuid] = self
 
-        self.project.add_page(self)
-        UIDict[self.uuid] = PageUI(self.uuid)
+        UIDict[self.uuid] = SceneUI(self.uuid)
+        self.project.add_scene(self)
     def add_sprite(self, sd: SpriteData):
         self.sprites.append(sd)
     def draw(self):
@@ -120,13 +123,12 @@ class PageData():
         self.UI.draw()
     @property
     def UI(self): return UIDict[self.uuid]
-class PageUI():
+class SceneUI():
     def __init__(self, uuid:str) -> None:
         self.uuid = uuid
 
-        print(self.data.project.UI.pageBarFrame)
-        self.btn_page = Button(self.data.project.UI.pageBarFrame, text=self.data.name+"\n("+str(self.data.length)+" tick)", width=10, height=40, command=lambda: self.data.project.UI.focus_page(self))
-        self.btn_page.pack(side=LEFT)
+        self.btn_scene = Button(self.data.project.UI.sceneBarFrame, text=self.data.name+"\n("+str(self.data.length)+" tick)", width=10, height=40, command=lambda: self.data.project.UI.focus_scene(self))
+        self.btn_scene.pack(side=LEFT, padx=1)
     @property
     def data(self): return DataDict[self.uuid]
     def draw(self) -> None:
@@ -162,7 +164,8 @@ class PageUI():
         self.frame_sprite_list.place(relx=0, rely=0.4, relwidth=1, relheight=0.588)
         #[Label(self.frame_sprite_list, text=str(i)+"번째 스프라이트입니다!").pack() for i in range(100)]
 
-        self.data.sprites[0].draw()
+        try: self.data.sprites[0].draw()
+        except: pass
     def focus(self): 
         self.frame.place(x=0, y=0, relwidth=1, relheight=1)#width=workspace.place_info()["width"], height=workspace.place_info()["height"])
     def unfocus(self):
@@ -174,16 +177,19 @@ class ProjectData():
         self.uuid = GetUUID()
         DataDict[self.uuid] = self
 
-        self.pages:List[PageData] = []
+        self.scenes:List[SceneData] = []
 
         
         global UIDict
         UIDict = {self.uuid:ProjectUI(self.uuid)}
     def draw(self):
-        #[page.draw() for page in self.pages]
+        #[scene.draw() for scene in self.scenes]
         UIDict[self.uuid].draw()
-    def add_page(self, page: PageData):
-        self.pages.append(page)
+    def add_scene(self, scene: SceneData):
+        self.scenes.append(scene)
+        scene.draw()
+        self.UI.addNewSceneBtn.pack_forget()
+        self.UI.addNewSceneBtn.pack(side=LEFT, padx=5)
     @property
     def UI(self): return UIDict[self.uuid]
 class ProjectUI():
@@ -200,18 +206,24 @@ class ProjectUI():
         self.screen = Frame(window, bg="#FFFFFF")
         self.screen.place(x=0, y=0, relwidth=1, relheight=1)
 
-        self.pageBarFrame = Frame(self.screen, bg="#FFFFFF")
-        self.pageBarFrame.place(x=40, y=10, relwidth=1, height=40)
+        self.sceneBarFrame = Frame(self.screen, bg="#FFFFFF")
+        self.sceneBarFrame.place(x=40, y=10, relwidth=1, height=40)
+
+        self.addNewSceneBtn = Button(self.sceneBarFrame, text="+", bg="#8080FF", fg="#FFFFFF", width=2, command=self.add_scene)
 
         self.workspace = Frame(self.screen, bg="#FFFFFF")
         self.workspace.place(x=0, y=50, relwidth=1, height=self.y-60)
 
-        GlobalData["img.error"] = PhotoImage(file=folder+"res\\error.png")
-        GlobalData["font.noto.ui"] = Font(family=GlobalData["font.noto.ui"], size=10)
-        GlobalData["font.noto.text"] = Font(family=GlobalData["font.noto.text"], size=14, weight=BOLD)
-        window.option_add("*Font", GlobalData["font.noto.ui"])
-
         menubar=Menu(window)
+
+        file_help=Menu(menubar, tearoff=0)
+        file_help.add_command(label = "새로 만들기")
+        file_help.add_command(label = "불러오기")
+        file_help.add_command(label = "저장하기")
+        file_help.add_command(label = "다른 이름으로 저장하기")
+        file_help.add_separator()
+        file_help.add_command(label = "내보내기")
+        menubar.add_cascade(label="파일", menu=file_help)
 
         menu_help=Menu(menubar, tearoff=0)
         menu_help.add_command(label = "도움말")
@@ -237,23 +249,56 @@ class ProjectUI():
         except: ...
         self.label_license = Label(self.frame_license, text=GlobalData[__type], justify=LEFT)
         self.label_license.pack(fill=BOTH)
-    def focus_page(self, page: PageData):
-        [UIDict[page.uuid].unfocus() for page in self.data.pages]
-        page.focus()
+    def focus_scene(self, scene: SceneData):
+        [UIDict[scene.uuid].unfocus() for scene in self.data.scenes]
+        scene.focus()
+    def add_scene(self, name="", tick="100", combo="tick(s)"):
+        self.tk_scene_maker = Toplevel(window)
+        self.tk_scene_maker.title("")
+        self.tk_scene_maker.geometry("190x105")
+        self.label_scene_maker_name = Label(self.tk_scene_maker, text="이름", anchor=S)
+        self.entry_scene_maker_name = Entry(self.tk_scene_maker, width=25)
+        self.entry_scene_maker_name.insert(END, name)
+        self.label_scene_maker_name.pack(fill=X, ipady=2)
+        self.entry_scene_maker_name.pack()
+        self.label_scene_maker_tick = Label(self.tk_scene_maker, text="길이", anchor=S)
+        self.frame_scene_maker_tick = Frame(self.tk_scene_maker)
+        self.combo_scene_maker_tick = Combobox(self.frame_scene_maker_tick, values=("tick(s)", "second(s)"), width=8)
+        self.combo_scene_maker_tick.set(combo)
+        self.entry_scene_maker_tick = Entry(self.frame_scene_maker_tick, width=14)
+        self.entry_scene_maker_tick.insert(END, tick)
+        self.label_scene_maker_tick.pack(fill=X, ipady=2)
+        self.frame_scene_maker_tick.pack()
+        self.combo_scene_maker_tick.pack(side=RIGHT)
+        self.entry_scene_maker_tick.pack(side=LEFT)
+        self.frame_scene_maker_btn = Frame(self.tk_scene_maker)
+        self.btn_scene_maker_done = Button(self.frame_scene_maker_btn, text="Done", command=self.__add_scene_done)
+        self.btn_scene_maker_exit = Button(self.frame_scene_maker_btn, text="Exit", command=self.tk_scene_maker.destroy)
+        self.frame_scene_maker_btn.pack(fill=X, ipady=20)
+        self.btn_scene_maker_done.pack(side=LEFT)
+        self.btn_scene_maker_exit.pack(side=RIGHT)
+    def __add_scene_done(self):
+        name, tick, combo = self.entry_scene_maker_name.get(), self.entry_scene_maker_tick.get(), self.combo_scene_maker_tick.get()
+        if "" in (name.replace(" ", ""), tick): msgbox.showerror("New Scene", "please type right text"); return self.add_scene(name, tick, combo)
+        try: tick = int(tick)
+        except: msgbox.showerror("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, combo)
+        if combo == "second(s)": tick *= 20 
+        SceneData(self.data, name, tick)
+        self.tk_scene_maker.destroy()
     @property
     def data(self): return DataDict[self.uuid]
     def draw(self):
-        #[btn.pack_forget() for btn in self.pageButton]
-        #del self.pageButton
-        [UIDict[page.uuid].draw() for page in self.data.pages]
-        self.data.pages[0].UI.focus()
+        #[btn.pack_forget() for btn in self.sceneButton]
+        #del self.sceneButton
+        #[UIDict[scene.uuid].draw() for scene in self.data.scenes]
+        self.data.scenes[0].UI.focus()
         GlobalData["sys.winRunning"] = True
         window.deiconify()
         window.mainloop()
 pro = ProjectData()
-pd1 = PageData(pro, "asdf1", 10)
-pd2 = PageData(pro, "asdf2", 50)
-pd3 = PageData(pro, "asdf3", 5)
+pd1 = SceneData(pro, "asdf1", 10)
+pd2 = SceneData(pro, "asdf2", 50)
+pd3 = SceneData(pro, "asdf3", 5)
 SpriteData(pd1, "Circle1")
 SpriteData(pd2, "Circle2")
 SpriteData(pd3, "Circle3")
