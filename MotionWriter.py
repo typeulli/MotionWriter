@@ -81,9 +81,9 @@ class SpriteData():
         self.scene = scene
         self.init_name = name
 
-        self.scene.add_sprite(self)
         DataDict[self.uuid] = self
         UIDict[self.uuid] = SpriteUI(self.uuid)
+        self.scene.add_sprite(self)
     def draw(self):
         self.UI.draw()
     @property
@@ -118,6 +118,9 @@ class SceneData():
         self.project.add_scene(self)
     def add_sprite(self, sd: SpriteData):
         self.sprites.append(sd)
+        sd.draw()
+        self.UI.addNewSpriteBtn.pack_forget()
+        self.UI.addNewSpriteBtn.pack(fill=X)
     def draw(self):
         #[sprite.draw() for sprite in self.sprites]
         self.UI.draw()
@@ -162,10 +165,31 @@ class SceneUI():
         
         self.frame_sprite_list = ScrollableFrame(self.frame_split_left, bg="#F0F0F0")
         self.frame_sprite_list.place(relx=0, rely=0.4, relwidth=1, relheight=0.588)
+        self.addNewSpriteBtn = Button(self.frame_sprite_list, text="새로운 스프라이트 추가", command=self.add_sprite)
+        self.addNewSpriteBtn.pack(fill=X)
         #[Label(self.frame_sprite_list, text=str(i)+"번째 스프라이트입니다!").pack() for i in range(100)]
 
         try: self.data.sprites[0].draw()
         except: pass
+    def add_sprite(self, name=""):
+        self.tk_sprite_maker = Toplevel(window)
+        self.tk_sprite_maker.title("")
+        self.tk_sprite_maker.geometry("190x65")
+        self.label_sprite_maker_name = Label(self.tk_sprite_maker, text="이름", anchor=S)
+        self.entry_sprite_maker_name = Entry(self.tk_sprite_maker, width=25)
+        self.entry_sprite_maker_name.insert(END, name)
+        self.label_sprite_maker_name.pack(fill=X, ipady=2)
+        self.entry_sprite_maker_name.pack()
+        self.frame_sprite_maker_btn = Frame(self.tk_sprite_maker)
+        self.btn_sprite_maker_done = Button(self.frame_sprite_maker_btn, text="Done", command=self.__add_sprite_done)
+        self.btn_sprite_maker_exit = Button(self.frame_sprite_maker_btn, text="Exit", command=self.tk_sprite_maker.destroy)
+        self.frame_sprite_maker_btn.pack(fill=X, ipady=20)
+        self.btn_sprite_maker_done.pack(side=LEFT)
+        self.btn_sprite_maker_exit.pack(side=RIGHT)
+    def __add_sprite_done(self):
+        name = self.entry_sprite_maker_name.get()
+        SpriteData(self.data, name)
+        self.tk_sprite_maker.destroy()
     def focus(self): 
         self.frame.place(x=0, y=0, relwidth=1, relheight=1)#width=workspace.place_info()["width"], height=workspace.place_info()["height"])
     def unfocus(self):
