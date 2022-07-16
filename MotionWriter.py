@@ -1,47 +1,49 @@
+from cmath import log
 from functools import partial
 from time import localtime, strftime, time
-from tkinter import BOTH, BOTTOM, DISABLED, END, HORIZONTAL, LEFT, NW, RIGHT, S, TOP, X, Y, Canvas, Entry, Frame, Label, LabelFrame, Menu, PhotoImage, Scrollbar, Tk, Button, Toplevel, Scale
+from tkinter import BOTH, BOTTOM, END, HORIZONTAL, LEFT, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Entry, Frame, Label, Menu, PhotoImage, Scrollbar, Tk, Button, Toplevel, Scale
 from tkinter.font import BOLD, Font
-from tkinter.ttk import Combobox, Notebook
+from tkinter.ttk import Combobox
 import tkinter.messagebox as msgbox
-from typing import Any, Dict, List, Literal, Union
+from typing import Any, Dict, List, Literal
 from uuid import uuid4
 from os.path import dirname, realpath
 from hashlib import sha256
-#from numba.experimental import jitclass
+from numba import jit
 
 folder = dirname(realpath(__file__)) + "\\"
 
 window = Tk()
 window.withdraw()
-
 AllUUID:List[str] = []
 DataDict:Dict[str, Any] = {}
 UIDict:Dict[str, Any] = {}
 GlobalData:Dict[str, Any] = {
     "img.error":PhotoImage(file=folder+"res\\error.png"),
+    "img.x":PhotoImage(file=folder+"res\\x.png"),
 
     "font.noto.ui":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=10),
-    "font.noto.text":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=14, weight=BOLD),
+    "font.noto.text14":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=14, weight=BOLD),
 
-    "license.MotionWriter":(folder+"res\\license\\MotionWriter.txt", "21c92ee89975a5972f20eb1e1aa9882ec0aead02fc8995c6607657b4d8d6354b"),
+    "license.MotionWriter":(folder+"res\\license\\MotionWriter.txt", "6f2a9eef610c50f807f8935136631b072f715a91d0692ace1e9ff26b4314f44e"),
     "license.Google Open Font":(folder+"res\\license\\Google Open Font.txt", "02d198273c4badb4046f253170297fb3eb3b38dd6c7b445c3c4a53f21bee360e")
 }
 window.option_add("*Font", GlobalData["font.noto.ui"])
-
 def logger(_type: Literal["INFO", "WARN", "ERROR"], _string: str, _code: str, _source: str = "Log"):
     text = "[" + strftime('%H:%M:%S', localtime(time())) + "] ["+_type+"] [" + _source + " :: " + _code +"] " + _string
     print(text)
-    if _type == "ERROR":
-        msgbox.showerror("MotionWriter", _source + "\n" + _string + "\n" + "CODE: " + _code)
-        exit()
-
+    msg_dict = {"ERROR":msgbox.showerror, "WARN":msgbox.showwarning, "INFO":msgbox.showinfo}
+    msg_dict[_type]("MotionWriter", _source + "\n" + _string + "\n" + "CODE: " + _code)
+    if _type == "ERROR": exit()
+        
+        
+def GetHash(data:str)->str:
+    return sha256(data.encode()).hexdigest()
 for key in filter(lambda key: key.startswith("license."), GlobalData.keys()):
-    with open(GlobalData[key][0], "r", encoding="utf-8") as f: text = f.read(); hash_256 = sha256(text.encode("utf-8")).hexdigest()
+    with open(GlobalData[key][0], "r", encoding="utf-8") as f: text = f.read(); hash_256 = GetHash(text)
     if hash_256 == GlobalData[key][1]: GlobalData[key] = text
     else: logger("ERROR", "License data file about " + key.replace("license.", "") + " is modified.", "ERR_LICENSE_MODIFIED", "DataError :: LicenseError")
 del text, hash_256
-
 class ScrollableFrame(Frame):
     def __init__(self, container, *args, **kwargs):
         self.__frame_master = Frame(container, *args, **kwargs)
@@ -52,15 +54,17 @@ class ScrollableFrame(Frame):
         self.bind(
             "<Configure>",
             lambda e: self.__canvas.configure(
+                height=self.cget("height"),
                 scrollregion=self.__canvas.bbox("all")
         ))
         
         self.__canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.__scroll.pack(side="right", fill="y")
-        self.__canvas.create_window((0,0), window=self, anchor="nw", width=float(self.__canvas.cget("width"))*1.425, height=float(self.__canvas.cget("height"))*1.5)
+        self.__canvas.create_window((0,0), window=self, anchor="nw", width=float(self.__canvas.cget("width"))*1.425)
         self.__canvas.configure(yscrollcommand=self.__scroll.set)
 
         self.pack, self.grid, self.place = self.__frame_master.pack, self.__frame_master.grid, self.__frame_master.place
+    def update_ui(self): self.__canvas.configure(height=self.cget("height"))
 
 
 def GetUUID(ignore:List[str]=AllUUID):
@@ -88,20 +92,44 @@ class SpriteData():
         self.UI.draw()
     @property
     def UI(self): return UIDict[self.uuid]
+    def remove(self):
+        if len(self.scene.sprites) == 1: return False
+        self.scene.remove_sprite(self)
+        del DataDict[self.uuid]
+        del UIDict[self.uuid]
+        return True
 class SpriteUI():
-    def __init__(self, uuid:str) -> None: self.uuid = uuid
-    @property
-    def data(self)->SpriteData: return DataDict[self.uuid]
-    @property
-    def name(self)->str: return self.entry_sprite_name_list.get()
-    def draw(self):
-        self.frame_sprite_list = Frame(self.data.scene.UI.frame_sprite_list)
+    def __init__(self, uuid:str) -> None:
+        self.uuid = uuid
+
+        self.frame_sprite_list = Frame(self.data.scene.UI.frame_sprite_list, bg="#FFFFFF")
         self.frame_sprite_list.pack(fill=X)
         self.frame_sprite_list_up = Frame(self.frame_sprite_list, bg="#FFFFFF")
         self.frame_sprite_list_up.pack(fill=X, side=TOP)
         self.entry_sprite_name_list = Entry(self.frame_sprite_list_up)
         self.entry_sprite_name_list.insert(END, self.data.init_name)
         self.entry_sprite_name_list.pack(side=LEFT)
+        self.btn_sprite_remove = Button(self.frame_sprite_list_up, image=GlobalData["img.x"], bg="#FFFFFF", relief=SOLID, bd=0, command=self.remove)
+        self.btn_sprite_remove.pack(side=RIGHT, padx=20)
+    def remove(self):
+        isok = self.data.remove()
+        if not isok: logger("WARN", "Scene must have at least 1 sprite", "ERR_SPRITE_REMOVE", "DataError :: SpriteError"); return
+        for obj in self.__dict__:
+            try: self.__getattribute__(obj).destroy()
+            except: pass
+    @property
+    def data(self)->SpriteData: return DataDict[self.uuid]
+    @property
+    def name(self)->str: return self.entry_sprite_name_list.get()
+    def draw(self):
+        self.frame_sprite_edit = Frame(self.data.scene.UI.frame_split_right, bg="#FFFFFF")
+        
+        self.label_sprite_info = Label(self.frame_sprite_edit, text="The motions of sprite \""+self.name+"\"", bg="#FFFFFF", justify=LEFT, anchor=W)
+        self.label_sprite_info.pack(fill=X)
+    def focus(self):
+        [sprite.UI.unfocus() for sprite in self.data.scene.sprites if sprite.UI != self]
+        self.frame_sprite_edit.place(x=10, y=0, relwidth=1, relheight=1)
+    def unfocus(self): self.frame_sprite_edit.place_forget()
 
 class SceneData():
     def __init__(self, project, name:str, length:int) -> None:
@@ -116,11 +144,17 @@ class SceneData():
 
         UIDict[self.uuid] = SceneUI(self.uuid)
         self.project.add_scene(self)
+        SpriteData(self, "New Sprite")
+    def remove_sprite(self, sd:SpriteData):
+        try: self.sprites[self.sprites.index(sd)-1].UI.focus()
+        except: self.sprites[self.sprites.index(sd)+1].UI.focus()
+        self.sprites.remove(sd)
     def add_sprite(self, sd: SpriteData):
         self.sprites.append(sd)
         sd.draw()
-        self.UI.addNewSpriteBtn.pack_forget()
-        self.UI.addNewSpriteBtn.pack(fill=X)
+        sd.UI.focus()
+        self.UI.addNewSpriteFrame.pack_forget()
+        self.UI.addNewSpriteFrame.pack(fill=X)
     def draw(self):
         #[sprite.draw() for sprite in self.sprites]
         self.UI.draw()
@@ -130,7 +164,7 @@ class SceneUI():
     def __init__(self, uuid:str) -> None:
         self.uuid = uuid
 
-        self.btn_scene = Button(self.data.project.UI.sceneBarFrame, text=self.data.name+"\n("+str(self.data.length)+" tick)", width=10, height=40, command=lambda: self.data.project.UI.focus_scene(self))
+        self.btn_scene = Button(self.data.project.UI.sceneBarFrame, text=self.data.name+"\n("+str(self.data.length)+" tick)", width=10, height=40, command=self.focus)
         self.btn_scene.pack(side=LEFT, padx=1)
     @property
     def data(self): return DataDict[self.uuid]
@@ -144,7 +178,7 @@ class SceneUI():
         self.frame = Frame(workspace, bg="#FFFFFF")
 
         self.frame_split_left = Frame(self.frame)
-        self.frame_split_left.place(x=10, y=10, relwidth=0.4, relheight=1)
+        self.frame_split_left.place(relx=0, rely=0, relwidth=0.4, relheight=1)
 
         self.frame_video = Frame(self.frame_split_left, bg="#FFFFFF", bd=1, relief="solid") #flat, groove, raised, ridge, solid, or sunken
         self.frame_video.place(x=0, y=0, relwidth=1, relheight=0.4)
@@ -152,9 +186,9 @@ class SceneUI():
         self.frame_video_error.place(x=0, y=0, relwidth=1, relheight=1)
         self.img_video_error = Label(self.frame_video_error, image=GlobalData["img.error"], bg="#5a5a5a")
         self.img_video_error.place(relx=0.4, rely=0.15, width=100, height=100)
-        self.label_video_error1 = Label(self.frame_video_error, text="동영상이 물에 젖어서 말리는 중입니다.. :(", bg="#5a5a5a", fg="#FFFFFF", font=GlobalData["font.noto.text"])
+        self.label_video_error1 = Label(self.frame_video_error, text="동영상이 물에 젖어서 말리는 중입니다.. :(", bg="#5a5a5a", fg="#FFFFFF", font=GlobalData["font.noto.text14"])
         self.label_video_error1.place(relx=0.2, rely=0.5)
-        self.label_video_error2 = Label(self.frame_video_error, text="잠시만 기다려 주세요!", bg="#5a5a5a", fg="#FFFFFF", font=GlobalData["font.noto.text"])
+        self.label_video_error2 = Label(self.frame_video_error, text="잠시만 기다려 주세요!", bg="#5a5a5a", fg="#FFFFFF", font=GlobalData["font.noto.text14"])
         self.label_video_error2.place(relx=0.32, rely=0.6)
         self.frame_video_control = Frame(self.frame_video, bg="#FFFFFF", bd=2, relief="solid")
         self.frame_video_control.pack(side=BOTTOM, fill=X)
@@ -165,19 +199,26 @@ class SceneUI():
         
         self.frame_sprite_list = ScrollableFrame(self.frame_split_left, bg="#F0F0F0")
         self.frame_sprite_list.place(relx=0, rely=0.4, relwidth=1, relheight=0.588)
-        self.addNewSpriteBtn = Button(self.frame_sprite_list, text="새로운 스프라이트 추가", command=self.add_sprite)
-        self.addNewSpriteBtn.pack(fill=X)
+        self.addNewSpriteFrame = Frame(self.frame_sprite_list)
+        self.addNewSpriteFrame.pack(fill=X)
+        self.addNewSpriteBtn = Button(self.addNewSpriteFrame, text="새로운 스프라이트 추가", command=self.add_sprite)
+        self.addNewSpriteBtn.pack(side=RIGHT)
+
+        self.frame_split_right = Frame(self.frame, bg="#FFFFFF")
+        self.frame_split_right.place(relx=0.4, rely=0, relwidth=0.6, relheight=1)
         #[Label(self.frame_sprite_list, text=str(i)+"번째 스프라이트입니다!").pack() for i in range(100)]
 
         try: self.data.sprites[0].draw()
         except: pass
     def add_sprite(self, name=""):
         self.tk_sprite_maker = Toplevel(window)
+        self.tk_sprite_maker.deiconify()
         self.tk_sprite_maker.title("")
         self.tk_sprite_maker.geometry("190x65")
         self.label_sprite_maker_name = Label(self.tk_sprite_maker, text="이름", anchor=S)
         self.entry_sprite_maker_name = Entry(self.tk_sprite_maker, width=25)
         self.entry_sprite_maker_name.insert(END, name)
+        self.entry_sprite_maker_name.focus()
         self.label_sprite_maker_name.pack(fill=X, ipady=2)
         self.entry_sprite_maker_name.pack()
         self.frame_sprite_maker_btn = Frame(self.tk_sprite_maker)
@@ -188,10 +229,12 @@ class SceneUI():
         self.btn_sprite_maker_exit.pack(side=RIGHT)
     def __add_sprite_done(self):
         name = self.entry_sprite_maker_name.get()
-        SpriteData(self.data, name)
         self.tk_sprite_maker.destroy()
+        if name.replace(" ", "") == "": msgbox.showerror("New Scene", "please type text"); return self.add_sprite(name)
+        SpriteData(self.data, name)
     def focus(self): 
-        self.frame.place(x=0, y=0, relwidth=1, relheight=1)#width=workspace.place_info()["width"], height=workspace.place_info()["height"])
+        [scene.UI.unfocus() for scene in self.data.project.scenes if scene.UI != self]
+        self.frame.place(x=10, y=10, relwidth=0.985, relheight=1)#width=workspace.place_info()["width"], height=workspace.place_info()["height"])
     def unfocus(self):
         self.frame.place_forget()
 
@@ -212,6 +255,7 @@ class ProjectData():
     def add_scene(self, scene: SceneData):
         self.scenes.append(scene)
         scene.draw()
+        scene.UI.focus()
         self.UI.addNewSceneBtn.pack_forget()
         self.UI.addNewSceneBtn.pack(side=LEFT, padx=5)
     @property
@@ -273,9 +317,7 @@ class ProjectUI():
         except: ...
         self.label_license = Label(self.frame_license, text=GlobalData[__type], justify=LEFT)
         self.label_license.pack(fill=BOTH)
-    def focus_scene(self, scene: SceneData):
-        [UIDict[scene.uuid].unfocus() for scene in self.data.scenes]
-        scene.focus()
+        self.frame_license.update_ui()
     def add_scene(self, name="", tick="100", combo="tick(s)"):
         self.tk_scene_maker = Toplevel(window)
         self.tk_scene_maker.title("")
@@ -285,6 +327,7 @@ class ProjectUI():
         self.entry_scene_maker_name.insert(END, name)
         self.label_scene_maker_name.pack(fill=X, ipady=2)
         self.entry_scene_maker_name.pack()
+        self.entry_scene_maker_name.focus()
         self.label_scene_maker_tick = Label(self.tk_scene_maker, text="길이", anchor=S)
         self.frame_scene_maker_tick = Frame(self.tk_scene_maker)
         self.combo_scene_maker_tick = Combobox(self.frame_scene_maker_tick, values=("tick(s)", "second(s)"), width=8)
@@ -303,12 +346,12 @@ class ProjectUI():
         self.btn_scene_maker_exit.pack(side=RIGHT)
     def __add_scene_done(self):
         name, tick, combo = self.entry_scene_maker_name.get(), self.entry_scene_maker_tick.get(), self.combo_scene_maker_tick.get()
-        if "" in (name.replace(" ", ""), tick): msgbox.showerror("New Scene", "please type right text"); return self.add_scene(name, tick, combo)
+        self.tk_scene_maker.destroy()
+        if "" in (name.replace(" ", ""), tick): msgbox.showerror("New Scene", "please type text"); return self.add_scene(name, tick, combo)
         try: tick = int(tick)
         except: msgbox.showerror("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, combo)
         if combo == "second(s)": tick *= 20 
         SceneData(self.data, name, tick)
-        self.tk_scene_maker.destroy()
     @property
     def data(self): return DataDict[self.uuid]
     def draw(self):
@@ -323,7 +366,4 @@ pro = ProjectData()
 pd1 = SceneData(pro, "asdf1", 10)
 pd2 = SceneData(pro, "asdf2", 50)
 pd3 = SceneData(pro, "asdf3", 5)
-SpriteData(pd1, "Circle1")
-SpriteData(pd2, "Circle2")
-SpriteData(pd3, "Circle3")
 pro.draw()
