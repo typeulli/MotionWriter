@@ -10,7 +10,6 @@ from uuid import uuid4
 from os.path import dirname, realpath
 from hashlib import sha256
 from numba import jit
-
 folder = dirname(realpath(__file__)) + "\\"
 
 window = Tk()
@@ -25,24 +24,23 @@ GlobalData:Dict[str, Any] = {
     "font.noto.ui":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=10),
     "font.noto.text14":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=14, weight=BOLD),
 
-    "license.MotionWriter":(folder+"res\\license\\MotionWriter.txt", "6f2a9eef610c50f807f8935136631b072f715a91d0692ace1e9ff26b4314f44e"),
+    "license.MotionWriter":(folder+"res\\license\\MotionWriter.txt", "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef"),
     "license.Google Open Font":(folder+"res\\license\\Google Open Font.txt", "02d198273c4badb4046f253170297fb3eb3b38dd6c7b445c3c4a53f21bee360e")
 }
 window.option_add("*Font", GlobalData["font.noto.ui"])
 def logger(_type: Literal["INFO", "WARN", "ERROR"], _string: str, _code: str, _source: str = "Log"):
     text = "[" + strftime('%H:%M:%S', localtime(time())) + "] ["+_type+"] [" + _source + " :: " + _code +"] " + _string
-    print(text)
+    print(text.replace("\n", "\\n"))
     msg_dict = {"ERROR":msgbox.showerror, "WARN":msgbox.showwarning, "INFO":msgbox.showinfo}
     msg_dict[_type]("MotionWriter", _source + "\n" + _string + "\n" + "CODE: " + _code)
     if _type == "ERROR": exit()
         
         
-def GetHash(data:str)->str:
-    return sha256(data.encode()).hexdigest()
+def GetHash(data:str)->str: return sha256(data.encode()).hexdigest()
 for key in filter(lambda key: key.startswith("license."), GlobalData.keys()):
     with open(GlobalData[key][0], "r", encoding="utf-8") as f: text = f.read(); hash_256 = GetHash(text)
     if hash_256 == GlobalData[key][1]: GlobalData[key] = text
-    else: logger("ERROR", "License data file about " + key.replace("license.", "") + " is modified.", "ERR_LICENSE_MODIFIED", "DataError :: LicenseError")
+    else: logger("ERROR", "License data file about " + key.replace("license.", "") + " is modified.", "ERROR_LICENSE_MODIFIED", "DataError :: LicenseError")
 del text, hash_256
 class ScrollableFrame(Frame):
     def __init__(self, container, *args, **kwargs):
@@ -60,7 +58,7 @@ class ScrollableFrame(Frame):
         
         self.__canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.__scroll.pack(side="right", fill="y")
-        self.__canvas.create_window((0,0), window=self, anchor="nw", width=float(self.__canvas.cget("width"))*1.425)
+        self.__canvas.create_window((0,0), window=self, anchor="nw", width=float(self.__canvas.cget("width"))*1.5)
         self.__canvas.configure(yscrollcommand=self.__scroll.set)
 
         self.pack, self.grid, self.place = self.__frame_master.pack, self.__frame_master.grid, self.__frame_master.place
@@ -113,7 +111,7 @@ class SpriteUI():
         self.btn_sprite_remove.pack(side=RIGHT, padx=20)
     def remove(self):
         isok = self.data.remove()
-        if not isok: logger("WARN", "Scene must have at least 1 sprite", "ERR_SPRITE_REMOVE", "DataError :: SpriteError"); return
+        if not isok: logger("WARN", "Scene must have at least 1 sprite", "WARN_SPRITE_REMOVE", "InteractionWarn :: SpriteWarn"); return
         for obj in self.__dict__:
             try: self.__getattribute__(obj).destroy()
             except: pass
@@ -347,7 +345,8 @@ class ProjectUI():
     def __add_scene_done(self):
         name, tick, combo = self.entry_scene_maker_name.get(), self.entry_scene_maker_tick.get(), self.combo_scene_maker_tick.get()
         self.tk_scene_maker.destroy()
-        if "" in (name.replace(" ", ""), tick): msgbox.showerror("New Scene", "please type text"); return self.add_scene(name, tick, combo)
+        if len(name) > 10: logger("WARN", "name is too long\nname must be shorter or same 10 letters", "WARN_LENGTH_LIMIT", "ObjectHandleWarn :: SceneWarn"); return self.add_scene(name)
+        if "" in (name.replace(" ", ""), tick): logger("WARN", "you must fill all text box", "WARN_INPUT_EMPTY"); return self.add_scene(name, tick, combo)
         try: tick = int(tick)
         except: msgbox.showerror("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, combo)
         if combo == "second(s)": tick *= 20 
