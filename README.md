@@ -17,8 +17,8 @@ Which can be used as effect or moving emoji.
 ## How image-generating functions (such as move, rotate, ...) works
  * rotate (rotation)<br>
    * Function expression<br>
-     *$x\prime=(x-a)\cos\theta-(y-b)\sin\theta+a$*<br>
-     *$y\prime=(x-a)\sin\theta+(y-b)\cos\theta+b$*
+     $x\prime=(x-a)\cos\theta-(y-b)\sin\theta+a$*<br>
+     $y\prime=(x-a)\sin\theta+(y-b)\cos\theta+b$
 
 ## Required Specifications
 `This is comfirmed specifications. Not minimum specifications.`
