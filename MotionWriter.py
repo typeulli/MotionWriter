@@ -1,19 +1,31 @@
-from cmath import log
+from enum import Enum
 from functools import partial
 from time import localtime, strftime, time
-from tkinter import BOTH, BOTTOM, END, HORIZONTAL, LEFT, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Entry, Frame, Label, Menu, PhotoImage, Scrollbar, Tk, Button, Toplevel, Scale
-from tkinter.font import BOLD, Font
-from tkinter.ttk import Combobox
+from tkinter import BOTH, BOTTOM, END, HORIZONTAL, LEFT, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Entry, Frame, Label, Menu, PhotoImage, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
+from tkinter.filedialog import askopenfilename
+from tkinter.font import BOLD, ITALIC, Font
+from tkinter.ttk import Combobox, OptionMenu
 import tkinter.messagebox as msgbox
-from typing import Any, Dict, List, Literal
+from types import FunctionType
+from typing import Any, Dict, List, Literal, Tuple
 from uuid import uuid4
 from os.path import dirname, realpath
 from hashlib import sha256
-from numba import jit
+import sys
+from traceback import format_tb
 folder = dirname(realpath(__file__)) + "\\"
+del dirname, realpath
+argv = sys.argv
+
+if not "--onHandler" in argv:
+    from subprocess import call
+    try: call(folder+"Handler.exe")
+    except: call("python "+folder+"Handler.py")
+    exit()
 
 window = Tk()
 window.withdraw()
+fake_focus_in = window.focus
 AllUUID:List[str] = []
 DataDict:Dict[str, Any] = {}
 UIDict:Dict[str, Any] = {}
@@ -21,21 +33,27 @@ GlobalData:Dict[str, Any] = {
     "img.error":PhotoImage(file=folder+"res\\error.png"),
     "img.x":PhotoImage(file=folder+"res\\x.png"),
 
-    "font.noto.ui":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=10),
-    "font.noto.text14":Font(family=folder+"res\\NotoSansKR-Medium.otf", size=14, weight=BOLD),
+    "font.noto.ui":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=10),
+    "font.noto.text14":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=14, weight=BOLD),
+    "font.kalam.italic":Font(family=folder+"res\\font\\Kalam.ttf", size=10, slant=ITALIC),
 
     "license.MotionWriter":(folder+"res\\license\\MotionWriter.txt", "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef"),
     "license.Google Open Font":(folder+"res\\license\\Google Open Font.txt", "02d198273c4badb4046f253170297fb3eb3b38dd6c7b445c3c4a53f21bee360e")
 }
 window.option_add("*Font", GlobalData["font.noto.ui"])
 def logger(_type: Literal["INFO", "WARN", "ERROR"], _string: str, _code: str, _source: str = "Log"):
-    text = "[" + strftime('%H:%M:%S', localtime(time())) + "] ["+_type+"] [" + _source + " :: " + _code +"] " + _string
-    print(text.replace("\n", "\\n"))
+    text = "[" + strftime('%H:%M:%S', localtime(time())) + "] ["+_type+"] [" + _source + " :: " + _code +"] " + {True:"\n", False:""}[len(_string.split("\n")) != 1] + _string
+    print(text)
     msg_dict = {"ERROR":msgbox.showerror, "WARN":msgbox.showwarning, "INFO":msgbox.showinfo}
     msg_dict[_type]("MotionWriter", _source + "\n" + _string + "\n" + "CODE: " + _code)
     if _type == "ERROR": exit()
-        
-        
+def exc_hook(exctype: type, value, traceback):
+    text = "Traceback (most recent call last):\n" + " ".join(format_tb(traceback)) + exctype.__name__
+    if len(str(value)): text += ": " + str(value)
+    logger("ERROR", text, "ERROR_INTERNAL_PYTHON", "InternalError :: PythonError :: " + str(exctype.__name__))
+sys.excepthook = exc_hook
+del sys
+
 def GetHash(data:str)->str: return sha256(data.encode()).hexdigest()
 for key in filter(lambda key: key.startswith("license."), GlobalData.keys()):
     with open(GlobalData[key][0], "r", encoding="utf-8") as f: text = f.read(); hash_256 = GetHash(text)
@@ -45,18 +63,18 @@ del text, hash_256
 class ScrollableFrame(Frame):
     def __init__(self, container, *args, **kwargs):
         self.__frame_master = Frame(container, *args, **kwargs)
-        self.__canvas = Canvas(self.__frame_master)
+        self.__canvas = Canvas(self.__frame_master, bg="#FFFFFF")
         self.__scroll = Scrollbar(self.__frame_master, orient="vertical", command=self.__canvas.yview)
-        super().__init__(self.__canvas)
+        super().__init__(self.__canvas, bg="#FFFFFF")
 
-        self.bind(
-            "<Configure>",
-            lambda e: self.__canvas.configure(
+        def config_event(e):
+            self.__canvas.configure(
                 height=self.cget("height"),
                 scrollregion=self.__canvas.bbox("all")
-        ))
+            )
+        self.bind("<Configure>", config_event)
         
-        self.__canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        self.__canvas.place(x=0, y=-2, relwidth=1, relheight=1)
         self.__scroll.pack(side="right", fill="y")
         self.__canvas.create_window((0,0), window=self, anchor="nw", width=float(self.__canvas.cget("width"))*1.5)
         self.__canvas.configure(yscrollcommand=self.__scroll.set)
@@ -73,23 +91,129 @@ def GetUUID(ignore:List[str]=AllUUID):
 
 class FrameWork():
     def __init__(self) -> None: ...
+class InputType(Enum):
+    Integer = 1
+    Float = 2
+    String = 3
+    Boolean = 4
+    File = 5
+    Selection = 6
+class MotionMeta():
+    def __init__(self, loc: str, inputs: Tuple[Tuple[str, InputType, Tuple[Any, ...]], ...]=(("apple", InputType.Selection, "kr", "en"), ("fruit", InputType.Selection, "appele", "banana", "kiwi"), ("img", InputType.File, None))) -> None:
+        self.loc = loc
+        self.inputs = inputs
+        self.__ui_data__:Dict[str, List[Any]] = {}
+        self.getFunc:Dict[str,FunctionType] = {}
+        self.getInput:Dict[str,Any] = {}
+    def __reset_data__(self):
+        for name, func in self.getFunc.items():
+            self.getInput[name] = func()
+    @property
+    def data(self):
+        self.__reset_data__()
+        return self.getInput
+    def draw(self, __MotionUI):
+        frame = Frame(__MotionUI.frame_repos)
+        frame.pack(side=TOP, fill=BOTH)
+        line = 1
+        for name, input_type, *input_args in self.inputs:
+            Label(frame, text=name+":").grid(row=line, column=1, sticky=W)
+            if input_type == InputType.Integer:
+                #TODO
+                ...
+            elif input_type == InputType.Float:
+                #TODO
+                ...
+            elif input_type == InputType.String:
+                entry = Entry(frame)
+                entry.grid(row=line, column=2, sticky=W)
+                self.getFunc[name] = entry.get
+            elif input_type == InputType.Boolean:
+                var = StringVar()
+                OptionMenu(frame, var, "true", *("true", "false")).grid(row=line, column=2, sticky=W)
+                self.getFunc[name] = var.get
+            elif input_type == InputType.File:
+                self.__ui_data__[name] = [Label(frame, text="C:/", font="TkDefaultFont")]
+                self.__ui_data__[name][0].grid(row=line, column=2, sticky=W)
+                def loadName(name:str):
+                    self.__ui_data__[name][0].config(text=askopenfilename(filetypes=(("All Files", "*.*"),)))
+                    self.__ui_data__[name][0].update()
+                Button(frame, text="...", command=partial(loadName, name)).grid(row=line, column=3, sticky=W)
+                self.getFunc[name] = lambda: self.__ui_data__[name][0].cget("text")
+            elif input_type == InputType.Selection:
+                var = StringVar()
+                OptionMenu(frame, var, input_args[0], *input_args).grid(row=line, column=2, sticky=W)
+                self.getFunc[name] = var.get
+            line += 1
+class MotionData():
+    def __init__(self, sprite, meta: MotionMeta):
+        self.uuid = GetUUID()
+        self.sprite = sprite
+        self.meta = meta
 
-class Motion():
-    def __init__(self) -> None: ...
+        DataDict[self.uuid] = self
+        UIDict[self.uuid] = MotionUI(self.uuid)
+        self.sprite.add_motion(self)
+    @property
+    def UI(self): return UIDict[self.uuid]
+    def remove(self):
+        self.sprite.remove_motion(self)
+        del DataDict[self.uuid]
+        del UIDict[self.uuid]
+
+class MotionUI():
+    def __init__(self, uuid:str) -> None:
+        self.uuid = uuid
+        self.start_tick = 0
+        self.end_tick = self.data.sprite.scene.length
+    @property
+    def data(self)->MotionData: return DataDict[self.uuid]
+    def draw(self):
+        self.frame = Frame(self.data.sprite.UI.frame_sprite_edit_motion, bg="#FFFFFF")
+        self.frame.pack(fill=X, padx=5, pady=10)
+        self.frame_repos = Frame(self.frame)
+        self.frame_repos.pack(side=LEFT)
+        self.frame_up = Frame(self.frame_repos)
+        self.frame_up.pack(fill="x")
+        self.label_meta_loc = Label(self.frame_up, text=self.data.meta.loc, font=GlobalData["font.kalam.italic"])
+        self.label_meta_loc.pack(side="left")
+        self.btn_delete = Button(self.frame_up, text="X", command=self.remove)
+        self.btn_delete.pack(side="right")
+
+        self.data.meta.draw(self)
+    def remove(self):
+        self.data.remove()
+        for obj in self.__dict__:
+            try: self.__getattribute__(obj).destroy()
+            except: pass
 
 class SpriteData():
     def __init__(self, scene, name:str) -> None:
         self.uuid = GetUUID()
         self.scene = scene
         self.init_name = name
+        self.motions:List[MotionData] = []
 
         DataDict[self.uuid] = self
         UIDict[self.uuid] = SpriteUI(self.uuid)
         self.scene.add_sprite(self)
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
     def draw(self):
         self.UI.draw()
+    def add_motion(self, motion:MotionData):
+        self.motions.append(motion)
+        motion.UI.draw()
     @property
     def UI(self): return UIDict[self.uuid]
+    def remove_motion(self, motion: MotionData):
+        self.motions.remove(motion)
     def remove(self):
         if len(self.scene.sprites) == 1: return False
         self.scene.remove_sprite(self)
@@ -102,13 +226,19 @@ class SpriteUI():
 
         self.frame_sprite_list = Frame(self.data.scene.UI.frame_sprite_list, bg="#FFFFFF")
         self.frame_sprite_list.pack(fill=X)
-        self.frame_sprite_list_up = Frame(self.frame_sprite_list, bg="#FFFFFF")
+        self.frame_sprite_list_up = Frame(self.frame_sprite_list, bg="#FFFFFF", cursor="hand2")
         self.frame_sprite_list_up.pack(fill=X, side=TOP)
+        self.frame_sprite_list_up.bind("<Button-1>", lambda o: self.focus())
         self.entry_sprite_name_list = Entry(self.frame_sprite_list_up)
         self.entry_sprite_name_list.insert(END, self.data.init_name)
         self.entry_sprite_name_list.pack(side=LEFT)
+        self.entry_sprite_name_list.bind("<Return>", lambda o: self.focus())
         self.btn_sprite_remove = Button(self.frame_sprite_list_up, image=GlobalData["img.x"], bg="#FFFFFF", relief=SOLID, bd=0, command=self.remove)
-        self.btn_sprite_remove.pack(side=RIGHT, padx=20)
+        self.btn_sprite_remove.pack(side=RIGHT, padx=40)
+
+        self.frame_sprite_list_down = Frame(self.frame_sprite_list, bg="#F0F0F0")
+        self.label_sprite_pos_x = Label(self.frame_sprite_list_down, text="X:", bg="#F0F0F0")
+        self.label_sprite_pos_x.pack(side=LEFT)
     def remove(self):
         isok = self.data.remove()
         if not isok: logger("WARN", "Scene must have at least 1 sprite", "WARN_SPRITE_REMOVE", "InteractionWarn :: SpriteWarn"); return
@@ -122,12 +252,27 @@ class SpriteUI():
     def draw(self):
         self.frame_sprite_edit = Frame(self.data.scene.UI.frame_split_right, bg="#FFFFFF")
         
-        self.label_sprite_info = Label(self.frame_sprite_edit, text="The motions of sprite \""+self.name+"\"", bg="#FFFFFF", justify=LEFT, anchor=W)
-        self.label_sprite_info.pack(fill=X)
+        self.label_sprite_info = Label(self.frame_sprite_edit, text="", bg="#FFFFFF", justify=LEFT, anchor=W)
+        self.label_sprite_info.pack(fill=X, pady=10)
+
+        self.frame_sprite_edit_motion = ScrollableFrame(self.frame_sprite_edit, bg="#FFFFFF")
+        self.frame_sprite_edit_motion.pack(fill=BOTH, expand=True)
     def focus(self):
-        [sprite.UI.unfocus() for sprite in self.data.scene.sprites if sprite.UI != self]
-        self.frame_sprite_edit.place(x=10, y=0, relwidth=1, relheight=1)
-    def unfocus(self): self.frame_sprite_edit.place_forget()
+        fake_focus_in()
+        self.label_sprite_info.config(text="The motions of sprite \""+self.name+"\"")
+
+        [sprite.UI.unfocus() for sprite in self.data.scene.sprites]
+        self.frame_sprite_edit.place(x=0, y=0, relwidth=1, relheight=1)
+        self.frame_sprite_list_down.pack(fill=X, side=TOP)
+    def unfocus(self):
+        self.frame_sprite_edit.place_forget()
+        self.frame_sprite_list_down.pack_forget()
+    def add_motion(self):
+        ...
+        #TODO
+    def remove_motion(self):
+        ...
+        #TODO
 
 class SceneData():
     def __init__(self, project, name:str, length:int) -> None:
@@ -228,10 +373,10 @@ class SceneUI():
     def __add_sprite_done(self):
         name = self.entry_sprite_maker_name.get()
         self.tk_sprite_maker.destroy()
-        if name.replace(" ", "") == "": msgbox.showerror("New Scene", "please type text"); return self.add_sprite(name)
+        if name.replace(" ", "") == "": msgbox.showwarning("New Scene", "please type text"); return self.add_sprite(name)
         SpriteData(self.data, name)
     def focus(self): 
-        [scene.UI.unfocus() for scene in self.data.project.scenes if scene.UI != self]
+        [scene.UI.unfocus() for scene in self.data.project.scenes]
         self.frame.place(x=10, y=10, relwidth=0.985, relheight=1)#width=workspace.place_info()["width"], height=workspace.place_info()["height"])
     def unfocus(self):
         self.frame.place_forget()
@@ -286,7 +431,7 @@ class ProjectUI():
         file_help.add_command(label = "새로 만들기")
         file_help.add_command(label = "불러오기")
         file_help.add_command(label = "저장하기")
-        file_help.add_command(label = "다른 이름으로 저장하기")
+        file_help.add_command(label = "다른 이름으로 저장하기", command=self.save_as_new_name)
         file_help.add_separator()
         file_help.add_command(label = "내보내기")
         menubar.add_cascade(label="파일", menu=file_help)
@@ -308,6 +453,8 @@ class ProjectUI():
         self.win_license.protocol("WM_DELETE_WINDOW", self.win_license.withdraw)
         self.frame_license = ScrollableFrame(self.win_license)
         self.frame_license.place(x=0, y=0, relwidth=1, relheight=1)
+    def save_as_new_name(self):
+        __file = askopenfilename#TODO
     def open_win_license(self, __type):
         self.win_license.deiconify()
         self.win_license.title("MotionWriter :: License :: " + __type.replace("license.", ""))
@@ -348,7 +495,7 @@ class ProjectUI():
         if len(name) > 10: logger("WARN", "name is too long\nname must be shorter or same 10 letters", "WARN_LENGTH_LIMIT", "ObjectHandleWarn :: SceneWarn"); return self.add_scene(name)
         if "" in (name.replace(" ", ""), tick): logger("WARN", "you must fill all text box", "WARN_INPUT_EMPTY"); return self.add_scene(name, tick, combo)
         try: tick = int(tick)
-        except: msgbox.showerror("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, combo)
+        except: msgbox.showwarning("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, combo)
         if combo == "second(s)": tick *= 20 
         SceneData(self.data, name, tick)
     @property

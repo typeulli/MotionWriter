@@ -15,9 +15,15 @@ Which can be used as effect or moving emoji.
 > - Includes default basic motions
 
 ## How image-generating functions (such as move, rotate, ...) works
- * rotate (rotation)<br>
+ * move (transfer)<br>
+   * get moved image for (a,b)
    * Function expression<br>
-     $x\prime=(x-a)\cos\theta-(y-b)\sin\theta+a$*<br>
+     $x\prime=x+a$
+     $y\prime=y+b$
+ * rotate (rotation)<br>
+   * get rotated image by $\seta$ as of (a,b)
+   * Function expression<br>
+     $x\prime=(x-a)\cos\theta-(y-b)\sin\theta+a$<br>
      $y\prime=(x-a)\sin\theta+(y-b)\cos\theta+b$
 
 ## Required Specifications
