@@ -1,27 +1,34 @@
+from email.policy import default
 from enum import Enum
 from functools import partial
+from json import loads
+from os import listdir
 from time import localtime, strftime, time
-from tkinter import BOTH, BOTTOM, END, HORIZONTAL, LEFT, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Entry, Frame, Label, Menu, PhotoImage, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
+from tkinter import BOTH, BOTTOM, END, HORIZONTAL, LEFT, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Entry, Frame, IntVar, Label, Menu, PhotoImage, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
 from tkinter.filedialog import askopenfilename
 from tkinter.font import BOLD, ITALIC, Font
 from tkinter.ttk import Combobox, OptionMenu
+from tkinter.tix import Button as TTKButton
 import tkinter.messagebox as msgbox
 from types import FunctionType
-from typing import Any, Dict, List, Literal, Tuple
+from typing import Any, Dict, List, Literal, Tuple, Union
 from uuid import uuid4
-from os.path import dirname, realpath
+from os.path import dirname, realpath, exists
 from hashlib import sha256
 import sys
 from traceback import format_tb
+from zipfile import ZipFile, is_zipfile
 folder = dirname(realpath(__file__)) + "\\"
 del dirname, realpath
 argv = sys.argv
 
-if not "--onHandler" in argv:
-    from subprocess import call
-    try: call(folder+"Handler.exe")
-    except: call("python "+folder+"Handler.py")
-    exit()
+if (not "--debug" in argv) and (not exists(folder + "res\\enable_debug.config")):
+    if not "--onHandler" in argv:
+        from subprocess import call
+        try: call(folder+"Handler.exe")
+        except: call("python "+folder+"Handler.py")
+        exit()
+del exists
 
 window = Tk()
 window.withdraw()
@@ -29,6 +36,7 @@ fake_focus_in = window.focus
 AllUUID:List[str] = []
 DataDict:Dict[str, Any] = {}
 UIDict:Dict[str, Any] = {}
+MetaLib:Dict[str, Any] = {}
 GlobalData:Dict[str, Any] = {
     "img.error":PhotoImage(file=folder+"res\\error.png"),
     "img.x":PhotoImage(file=folder+"res\\x.png"),
@@ -41,25 +49,34 @@ GlobalData:Dict[str, Any] = {
     "license.Google Open Font":(folder+"res\\license\\Google Open Font.txt", "02d198273c4badb4046f253170297fb3eb3b38dd6c7b445c3c4a53f21bee360e")
 }
 window.option_add("*Font", GlobalData["font.noto.ui"])
-def logger(_type: Literal["INFO", "WARN", "ERROR"], _string: str, _code: str, _source: str = "Log"):
+def logger(_type: Literal["INFO", "WARN", "ERROR"], _string: str, _code: str, _source: str = "Log", _showUI: bool = False):
     text = "[" + strftime('%H:%M:%S', localtime(time())) + "] ["+_type+"] [" + _source + " :: " + _code +"] " + {True:"\n", False:""}[len(_string.split("\n")) != 1] + _string
     print(text)
-    msg_dict = {"ERROR":msgbox.showerror, "WARN":msgbox.showwarning, "INFO":msgbox.showinfo}
-    msg_dict[_type]("MotionWriter", _source + "\n" + _string + "\n" + "CODE: " + _code)
+    if _showUI: {"ERROR":msgbox.showerror, "WARN":msgbox.showwarning, "INFO":msgbox.showinfo}[_type]("MotionWriter", _source + "\n" + _string + "\n" + "CODE: " + _code)
     if _type == "ERROR": exit()
-def exc_hook(exctype: type, value, traceback):
-    text = "Traceback (most recent call last):\n" + " ".join(format_tb(traceback)) + exctype.__name__
-    if len(str(value)): text += ": " + str(value)
-    logger("ERROR", text, "ERROR_INTERNAL_PYTHON", "InternalError :: PythonError :: " + str(exctype.__name__))
-sys.excepthook = exc_hook
+if not "--dev" in argv:
+    def exc_hook(exctype: type, value, traceback):
+        text = "Traceback (most recent call last):\n" + " ".join(format_tb(traceback)) + exctype.__name__
+        if len(str(value)): text += ": " + str(value)
+        logger("ERROR", text, "ERROR_INTERNAL_PYTHON", "InternalError :: PythonError :: " + str(exctype.__name__), True)
+    sys.excepthook = exc_hook
 del sys
 
 def GetHash(data:str)->str: return sha256(data.encode()).hexdigest()
 for key in filter(lambda key: key.startswith("license."), GlobalData.keys()):
     with open(GlobalData[key][0], "r", encoding="utf-8") as f: text = f.read(); hash_256 = GetHash(text)
     if hash_256 == GlobalData[key][1]: GlobalData[key] = text
-    else: logger("ERROR", "License data file about " + key.replace("license.", "") + " is modified.", "ERROR_LICENSE_MODIFIED", "DataError :: LicenseError")
+    else: logger("ERROR", "License data file about " + key.replace("license.", "") + " is modified.", "ERROR_LICENSE_MODIFIED", "DataError :: LicenseError", True)
 del text, hash_256
+    
+class Button(Button):
+    def __init__(self, container, *args, **kwargs):
+        super().__init__(container, *args, **kwargs)
+        fg, bg = self.cget("foreground"), self.cget("background")
+        self.config(bd=0, activebackground="#CCE4F7", activeforeground="#000000", relief=SOLID)
+        self.bind("<Enter>", lambda event: self.config(fg="#000000", bg="#E5F1FB"))
+        self.bind("<Leave>", lambda event: self.config(fg=fg, bg=bg))
+
 class ScrollableFrame(Frame):
     def __init__(self, container, *args, **kwargs):
         self.__frame_master = Frame(container, *args, **kwargs)
@@ -82,7 +99,6 @@ class ScrollableFrame(Frame):
         self.pack, self.grid, self.place = self.__frame_master.pack, self.__frame_master.grid, self.__frame_master.place
     def update_ui(self): self.__canvas.configure(height=self.cget("height"))
 
-
 def GetUUID(ignore:List[str]=AllUUID):
     uid = str(uuid4())
     while uid in ignore: uid = str(uuid4())
@@ -98,20 +114,26 @@ class InputType(Enum):
     Boolean = 4
     File = 5
     Selection = 6
+    Pos = 7
 class MotionMeta():
-    def __init__(self, loc: str, inputs: Tuple[Tuple[str, InputType, Tuple[Any, ...]], ...]=(("apple", InputType.Selection, "kr", "en"), ("fruit", InputType.Selection, "appele", "banana", "kiwi"), ("img", InputType.File, None))) -> None:
+    def __init__(self, loc: str, inputs: Tuple[Tuple[str, InputType, Tuple[Any, ...]], ...], description: str) -> None:
         self.loc = loc
         self.inputs = inputs
+        self.description = description
         self.__ui_data__:Dict[str, List[Any]] = {}
+        self.types = {inputs[i][0]:inputs[i][1] for i in range(len(inputs))}
         self.getFunc:Dict[str,FunctionType] = {}
         self.getInput:Dict[str,Any] = {}
-    def __reset_data__(self):
-        for name, func in self.getFunc.items():
-            self.getInput[name] = func()
-    @property
-    def data(self):
-        self.__reset_data__()
-        return self.getInput
+        for name, input_type, *input_args in self.inputs:
+            self.getInput[name] = {
+                InputType.Integer:0,
+                InputType.Float:0.0,
+                InputType.String:"",
+                InputType.Boolean:True,
+                InputType.File:"C:/",
+                InputType.Selection:input_args[0],
+                InputType.Pos: [0,0]
+            }[input_type]
     def draw(self, __MotionUI):
         frame = Frame(__MotionUI.frame_repos)
         frame.pack(side=TOP, fill=BOTH)
@@ -119,31 +141,69 @@ class MotionMeta():
         for name, input_type, *input_args in self.inputs:
             Label(frame, text=name+":").grid(row=line, column=1, sticky=W)
             if input_type == InputType.Integer:
-                #TODO
-                ...
-            elif input_type == InputType.Float:
-                #TODO
-                ...
-            elif input_type == InputType.String:
-                entry = Entry(frame)
+                var = StringVar(value=0)
+                entry = Entry(frame, textvariable=var)
                 entry.grid(row=line, column=2, sticky=W)
-                self.getFunc[name] = entry.get
+                def done(event, var, meta, name):
+                    fake_focus_in()
+                    try: meta.getInput[name] = round(float(var.get()))
+                    except: meta.getInput[name] = 0
+                    var.set(meta.getInput[name])
+                entry.bind("<Return>", partial(done, var=var, meta=self, name=name))
+            elif input_type == InputType.Float:
+                var = StringVar(value=0)
+                entry = Entry(frame, textvariable=var)
+                entry.grid(row=line, column=2, sticky=W)
+                def done(event, var, meta, name):
+                    fake_focus_in()
+                    try: meta.getInput[name] = float(var.get())
+                    except: meta.getInput[name] = 0
+                    var.set(meta.getInput[name])
+                entry.bind("<Return>", partial(done, var=var, meta=self, name=name))
+            elif input_type == InputType.String:
+                var = StringVar()
+                entry = Entry(frame, textvariable=var)
+                entry.grid(row=line, column=2, sticky=W)
+                def done(event, var, meta, name):
+                    fake_focus_in()
+                    meta.getInput[name] = var.get()
+                entry.bind("<Return>", partial(done, var=var, meta=self, name=name))
             elif input_type == InputType.Boolean:
                 var = StringVar()
-                OptionMenu(frame, var, "true", *("true", "false")).grid(row=line, column=2, sticky=W)
-                self.getFunc[name] = var.get
+                def done(meta, name, selected):
+                    fake_focus_in()
+                    meta.getInput[name] = {"true":True, "false":False}[selected]
+                OptionMenu(frame, var, "true", *("true", "false"), command=partial(done, meta=self, name=name)).grid(row=line, column=2, sticky=W)
             elif input_type == InputType.File:
-                self.__ui_data__[name] = [Label(frame, text="C:/", font="TkDefaultFont")]
-                self.__ui_data__[name][0].grid(row=line, column=2, sticky=W)
-                def loadName(name:str):
-                    self.__ui_data__[name][0].config(text=askopenfilename(filetypes=(("All Files", "*.*"),)))
-                    self.__ui_data__[name][0].update()
-                Button(frame, text="...", command=partial(loadName, name)).grid(row=line, column=3, sticky=W)
-                self.getFunc[name] = lambda: self.__ui_data__[name][0].cget("text")
+                label = Label(frame, text="C:/", font="TkDefaultFont")
+                label.grid(row=line, column=2, sticky=W)
+                def done(meta, name, label):
+                    fake_focus_in()
+                    meta.getInput[name] = askopenfilename(filetypes=(("All Files", "*.*"),))
+                    label.config(text=meta.getInput[name])
+                Button(frame, text="...", command=partial(done, meta=self, name=name, label=label)).grid(row=line, column=3, sticky=W)
             elif input_type == InputType.Selection:
                 var = StringVar()
-                OptionMenu(frame, var, input_args[0], *input_args).grid(row=line, column=2, sticky=W)
-                self.getFunc[name] = var.get
+                def done(selected, meta, name):
+                    print(selected)
+                    fake_focus_in()
+                    meta.getInput[name] = selected
+                OptionMenu(frame, var, input_args[0], *input_args, command=partial(done, meta=self, name=name)).grid(row=line, column=2, sticky=W)
+            elif input_type == InputType.Pos:
+                varx = StringVar(value=0)
+                vary = StringVar(value=0)
+                entryx = Entry(frame, textvariable=varx)
+                entryx.grid(row=line, column=2, sticky=W)
+                entryy = Entry(frame, textvariable=vary)
+                entryy.grid(row=line, column=3, sticky=W)
+                def done(event, var, meta, name, slot):
+                    fake_focus_in()
+                    try: meta.getInput[name][slot] = round(float(var.get()))
+                    except: meta.getInput[name][slot] = 0
+                    var.set(meta.getInput[name][slot])
+                entryx.bind("<Return>", partial(done, var=varx, meta=self, name=name, slot=0))
+                entryy.bind("<Return>", partial(done, var=vary, meta=self, name=name, slot=1))
+
             line += 1
 class MotionData():
     def __init__(self, sprite, meta: MotionMeta):
@@ -197,14 +257,7 @@ class SpriteData():
         DataDict[self.uuid] = self
         UIDict[self.uuid] = SpriteUI(self.uuid)
         self.scene.add_sprite(self)
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
-        MotionData(self, MotionMeta("defualt.graphic.ImageLoader"))
+        MotionData(self, MetaLib["default.ImageLoader"])
     def draw(self):
         self.UI.draw()
     def add_motion(self, motion:MotionData):
@@ -241,7 +294,7 @@ class SpriteUI():
         self.label_sprite_pos_x.pack(side=LEFT)
     def remove(self):
         isok = self.data.remove()
-        if not isok: logger("WARN", "Scene must have at least 1 sprite", "WARN_SPRITE_REMOVE", "InteractionWarn :: SpriteWarn"); return
+        if not isok: logger("WARN", "Scene must have at least 1 sprite", "WARN_SPRITE_REMOVE", "InteractionWarn :: SpriteWarn", True); return
         for obj in self.__dict__:
             try: self.__getattribute__(obj).destroy()
             except: pass
@@ -320,7 +373,7 @@ class SceneUI():
 
         self.frame = Frame(workspace, bg="#FFFFFF")
 
-        self.frame_split_left = Frame(self.frame)
+        self.frame_split_left = Frame(self.frame, bg="#FFFFFF")
         self.frame_split_left.place(relx=0, rely=0, relwidth=0.4, relheight=1)
 
         self.frame_video = Frame(self.frame_split_left, bg="#FFFFFF", bd=1, relief="solid") #flat, groove, raised, ridge, solid, or sunken
@@ -420,7 +473,7 @@ class ProjectUI():
         self.sceneBarFrame = Frame(self.screen, bg="#FFFFFF")
         self.sceneBarFrame.place(x=40, y=10, relwidth=1, height=40)
 
-        self.addNewSceneBtn = Button(self.sceneBarFrame, text="+", bg="#8080FF", fg="#FFFFFF", width=2, command=self.add_scene)
+        self.addNewSceneBtn = Button(self.sceneBarFrame, text="+", width=2, command=self.add_scene)
 
         self.workspace = Frame(self.screen, bg="#FFFFFF")
         self.workspace.place(x=0, y=50, relwidth=1, height=self.y-60)
@@ -433,7 +486,7 @@ class ProjectUI():
         file_help.add_command(label = "저장하기")
         file_help.add_command(label = "다른 이름으로 저장하기", command=self.save_as_new_name)
         file_help.add_separator()
-        file_help.add_command(label = "내보내기")
+        file_help.add_command(label = "내보내기", command=self.output)
         menubar.add_cascade(label="파일", menu=file_help)
 
         menu_help=Menu(menubar, tearoff=0)
@@ -453,6 +506,21 @@ class ProjectUI():
         self.win_license.protocol("WM_DELETE_WINDOW", self.win_license.withdraw)
         self.frame_license = ScrollableFrame(self.win_license)
         self.frame_license.place(x=0, y=0, relwidth=1, relheight=1)
+    def output(self):
+        self.win_output = Toplevel(window)
+        self.win_output.title("내보내기")
+        self.win_output.option_add("*Foreground", "#FFFFFF")
+        self.win_output.option_add("*Background", "#383f49")
+        frame = Frame(self.win_output)
+        frame.pack(fill=BOTH)
+
+        frame_button = Frame(frame)
+        frame_button.pack(side=BOTTOM, fill=X, pady=20)
+        btn_cancel = Button(frame_button, text="취소")
+        btn_cancel.pack(side=RIGHT, padx=5)
+        btn_ok = Button(frame_button, text="확인")
+        btn_ok.pack(side=RIGHT, padx=5)
+        self.win_output.deiconify()
     def save_as_new_name(self):
         __file = askopenfilename#TODO
     def open_win_license(self, __type):
@@ -492,8 +560,8 @@ class ProjectUI():
     def __add_scene_done(self):
         name, tick, combo = self.entry_scene_maker_name.get(), self.entry_scene_maker_tick.get(), self.combo_scene_maker_tick.get()
         self.tk_scene_maker.destroy()
-        if len(name) > 10: logger("WARN", "name is too long\nname must be shorter or same 10 letters", "WARN_LENGTH_LIMIT", "ObjectHandleWarn :: SceneWarn"); return self.add_scene(name)
-        if "" in (name.replace(" ", ""), tick): logger("WARN", "you must fill all text box", "WARN_INPUT_EMPTY"); return self.add_scene(name, tick, combo)
+        if len(name) > 10: logger("WARN", "name is too long\nname must be shorter or same 10 letters", "WARN_LENGTH_LIMIT", "ObjectHandleWarn :: SceneWarn", True); return self.add_scene(name)
+        if "" in (name.replace(" ", ""), tick): logger("WARN", "you must fill all text box", "WARN_INPUT_EMPTY", "ObjectHandleWarn :: SceneWarn", True); return self.add_scene(name, tick, combo)
         try: tick = int(tick)
         except: msgbox.showwarning("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, combo)
         if combo == "second(s)": tick *= 20 
@@ -508,6 +576,38 @@ class ProjectUI():
         GlobalData["sys.winRunning"] = True
         window.deiconify()
         window.mainloop()
+        
+# Import All MotionMeta
+__type_dict: Dict[str, InputType] = {
+    "Integer":InputType.Integer,
+    "Float":InputType.Float,
+    "String":InputType.String,
+    "Boolean":InputType.Boolean,
+    "File":InputType.File,
+    "Selection":InputType.Selection,
+    "Pos":InputType.Pos,
+}
+for package_name in listdir(folder+"script"):
+    file_path = folder+"script\\"+package_name
+    if not is_zipfile(file_path): continue
+    with ZipFile(file_path, "r") as zip_file:
+        for f in zip_file.filelist:
+            if not f.is_dir(): continue
+            #try:
+            if True:
+                init = loads(zip_file.read(f.filename+"__init__.json"))
+                name = package_name.split(".")[0] + "." + init["name"]
+                inputs:Dict = init["inputs"]
+                description:str = init["description"]
+                covered_inputs:Tuple[Tuple[str, InputType, Tuple[Any, ...]], ...] = ()
+                for input_name, [input_type, *input_args] in inputs.items():
+                    if len(input_args) == 0: input_args = (None,)
+                    covered_inputs += ((input_name, __type_dict[input_type], *input_args),)
+                logger("INFO", "importing "+name, "INFO_IMPORT", "FileReadInfo :: ReadMotionMeta")
+                MetaLib[name] = MotionMeta(name, covered_inputs, description)
+            #except KeyError as ke: print(ke); continue
+del __type_dict, package_name, file_path, zip_file, f, init, name, inputs, description, covered_inputs
+
 pro = ProjectData()
 pd1 = SceneData(pro, "asdf1", 10)
 pd2 = SceneData(pro, "asdf2", 50)

@@ -21,7 +21,7 @@ Which can be used as effect or moving emoji.
      $x\prime=x+a$
      $y\prime=y+b$
  * rotate (rotation)<br>
-   * get rotated image by $\seta$ as of (a,b)
+   * get rotated image by $\theta$ as of (a,b)
    * Function expression<br>
      $x\prime=(x-a)\cos\theta-(y-b)\sin\theta+a$<br>
      $y\prime=(x-a)\sin\theta+(y-b)\cos\theta+b$
@@ -32,9 +32,9 @@ Which can be used as effect or moving emoji.
 |:--:| :--- |
 | OS | ✔  Windows 10, 11 (64-bit) |
 ## Makers
->[Ice-Bukkit](https://github.com/Ice-Bukkit, "Goto github page of Ice-Bukkit")
->Yun Su
->Song Yunwoo
+>[Ice-Bukkit](https://github.com/Ice-Bukkit, "Goto github page of Ice-Bukkit") <br>
+>Yun Su <br>
+>Song Yunwoo <br>
 ## Update History
 | Version | Detail |
 | :-----: | :----- |

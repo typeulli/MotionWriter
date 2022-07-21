@@ -1,0 +1,7 @@
+{
+    "name": "ImageLoader",
+    "inputs": {
+        "file": ["File", "A", "S", "D", "F"]
+    },
+    "description": "Loads an image from a file"
+}
