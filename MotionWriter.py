@@ -1,28 +1,27 @@
-from email.policy import default
 from enum import Enum
 from functools import partial
 from json import loads
 from os import listdir
 from time import localtime, strftime, time
-from tkinter import BOTH, BOTTOM, END, HORIZONTAL, LEFT, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Entry, Frame, IntVar, Label, Menu, PhotoImage, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
+from tkinter import BOTH, BOTTOM, END, HORIZONTAL, LEFT, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Frame, Label, Menu, PhotoImage, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
 from tkinter.filedialog import askopenfilename
 from tkinter.font import BOLD, ITALIC, Font
-from tkinter.ttk import Combobox, OptionMenu
-from tkinter.tix import Button as TTKButton
+from tkinter.ttk import OptionMenu, Entry
 import tkinter.messagebox as msgbox
 from types import FunctionType
-from typing import Any, Dict, List, Literal, Tuple, Union
+from typing import Any, Dict, List, Literal, Tuple
 from uuid import uuid4
 from os.path import dirname, realpath, exists
 from hashlib import sha256
 import sys
 from traceback import format_tb
 from zipfile import ZipFile, is_zipfile
+from thefuzz.process import extract
 folder = dirname(realpath(__file__)) + "\\"
 del dirname, realpath
 argv = sys.argv
 
-if (not "--debug" in argv) and (not exists(folder + "res\\enable_debug.config")):
+if (not "--debug" in argv) and (not exists(folder + "script\\enable_debug.config")):
     if not "--onHandler" in argv:
         from subprocess import call
         try: call(folder+"Handler.exe")
@@ -42,8 +41,9 @@ GlobalData:Dict[str, Any] = {
     "img.x":PhotoImage(file=folder+"res\\x.png"),
 
     "font.noto.ui":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=10),
+    "font.noto.ui.sliant":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=10, slant=ITALIC),
+    "font.noto.ui.bold":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=10, weight=BOLD),
     "font.noto.text14":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=14, weight=BOLD),
-    "font.kalam.italic":Font(family=folder+"res\\font\\Kalam.ttf", size=10, slant=ITALIC),
 
     "license.MotionWriter":(folder+"res\\license\\MotionWriter.txt", "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef"),
     "license.Google Open Font":(folder+"res\\license\\Google Open Font.txt", "02d198273c4badb4046f253170297fb3eb3b38dd6c7b445c3c4a53f21bee360e")
@@ -192,10 +192,15 @@ class MotionMeta():
             elif input_type == InputType.Pos:
                 varx = StringVar(value=0)
                 vary = StringVar(value=0)
-                entryx = Entry(frame, textvariable=varx)
-                entryx.grid(row=line, column=2, sticky=W)
-                entryy = Entry(frame, textvariable=vary)
-                entryy.grid(row=line, column=3, sticky=W)
+                frame_entry = Frame(frame)
+                frame_entry.grid(row=line, column=2, sticky=W)
+                Label(frame_entry, text="[").pack(side=LEFT)
+                entryx = Entry(frame_entry, textvariable=varx, width=6)
+                entryx.pack(side=LEFT)
+                Label(frame_entry, text=", ").pack(side=LEFT)
+                entryy = Entry(frame_entry, textvariable=vary, width=6)
+                entryy.pack(side=LEFT)
+                Label(frame_entry, text="]").pack(side=LEFT)
                 def done(event, var, meta, name, slot):
                     fake_focus_in()
                     try: meta.getInput[name][slot] = round(float(var.get()))
@@ -235,7 +240,7 @@ class MotionUI():
         self.frame_repos.pack(side=LEFT)
         self.frame_up = Frame(self.frame_repos)
         self.frame_up.pack(fill="x")
-        self.label_meta_loc = Label(self.frame_up, text=self.data.meta.loc, font=GlobalData["font.kalam.italic"])
+        self.label_meta_loc = Label(self.frame_up, text=self.data.meta.loc, font=GlobalData["font.noto.ui.sliant"])
         self.label_meta_loc.pack(side="left")
         self.btn_delete = Button(self.frame_up, text="X", command=self.remove)
         self.btn_delete.pack(side="right")
@@ -257,12 +262,13 @@ class SpriteData():
         DataDict[self.uuid] = self
         UIDict[self.uuid] = SpriteUI(self.uuid)
         self.scene.add_sprite(self)
-        MotionData(self, MetaLib["default.ImageLoader"])
     def draw(self):
         self.UI.draw()
     def add_motion(self, motion:MotionData):
         self.motions.append(motion)
         motion.UI.draw()
+        self.UI.frame_motion_add_start.pack_forget()
+        self.UI.frame_motion_add_start.pack(fill=X, padx=5)
     @property
     def UI(self): return UIDict[self.uuid]
     def remove_motion(self, motion: MotionData):
@@ -310,19 +316,49 @@ class SpriteUI():
 
         self.frame_sprite_edit_motion = ScrollableFrame(self.frame_sprite_edit, bg="#FFFFFF")
         self.frame_sprite_edit_motion.pack(fill=BOTH, expand=True)
+
+        self.frame_motion_add_start = Frame(self.frame_sprite_edit_motion, bg="#FFFFFF")
+        self.frame_motion_add_start.pack(fill=X, padx=5)
+        self.btn_motion_add_start = Button(self.frame_motion_add_start, text="새 모션 추가", command=self.add_motion, bg="#FFFFFF", font=GlobalData["font.noto.ui.bold"])
+        self.btn_motion_add_start.pack(side=LEFT)
     def focus(self):
         fake_focus_in()
         self.label_sprite_info.config(text="The motions of sprite \""+self.name+"\"")
 
         [sprite.UI.unfocus() for sprite in self.data.scene.sprites]
-        self.frame_sprite_edit.place(x=0, y=0, relwidth=1, relheight=1)
+        self.frame_sprite_edit.place(x=0, y=0, relwidth=1, relheight=0.99)
         self.frame_sprite_list_down.pack(fill=X, side=TOP)
     def unfocus(self):
         self.frame_sprite_edit.place_forget()
         self.frame_sprite_list_down.pack_forget()
     def add_motion(self):
-        ...
-        #TODO
+        self.tk_add_motion = Toplevel()
+        self.tk_add_motion.title("새 모션 추가")
+        self.tk_add_motion.geometry("450x225")
+        #self.tk_add_motion.resizable(False, False)
+        self.frame_add_frame_search = Frame(self.tk_add_motion, bg="#FFFFFF")
+        self.frame_add_frame_search.pack(fill=X)
+        self.entry_add_motion_search = Entry(self.frame_add_frame_search)
+        self.entry_add_motion_search.pack(fill=X)
+        self.frame_add_motion_list = ScrollableFrame(self.tk_add_motion, bg="#FFFFFF")
+        self.frame_add_motion_list.pack(fill=BOTH, expand=True)
+        def reload_motion_list(event, entry, frame:Frame):
+            for child in frame.children.values(): child.pack_forget()
+            list_motion_name = list(MetaLib.keys())
+            search = entry.get()
+            if len(search) == 0:
+                recommend_motions = list(map(lambda n:(n, 0), list_motion_name))
+            else:
+                extracted = extract(search, list_motion_name)
+                recommend_motions = list(filter(lambda t:t[1]>=75, extracted))
+                if len(recommend_motions) == 0: recommend_motions = extracted
+            for motion_name, rate in recommend_motions:
+                Button(self.frame_add_motion_list, text=motion_name+" ("+str(rate)+"%)", command=partial(self.__add_motion_work, motion_name), bg="#FFFFFF", anchor=W, justify=LEFT).pack(fill=X)
+        self.entry_add_motion_search.bind("<KeyRelease>", partial(reload_motion_list, entry=self.entry_add_motion_search, frame=self.frame_add_motion_list))
+        reload_motion_list(None, self.entry_add_motion_search, self.frame_add_motion_list)
+    def __add_motion_work(self, motion_name):
+        MotionData(self.data, MetaLib[motion_name])
+        self.tk_add_motion.destroy()
     def remove_motion(self):
         ...
         #TODO
@@ -395,9 +431,9 @@ class SceneUI():
         
         self.frame_sprite_list = ScrollableFrame(self.frame_split_left, bg="#F0F0F0")
         self.frame_sprite_list.place(relx=0, rely=0.4, relwidth=1, relheight=0.588)
-        self.addNewSpriteFrame = Frame(self.frame_sprite_list)
+        self.addNewSpriteFrame = Frame(self.frame_sprite_list, bg="#FFFFFF")
         self.addNewSpriteFrame.pack(fill=X)
-        self.addNewSpriteBtn = Button(self.addNewSpriteFrame, text="새로운 스프라이트 추가", command=self.add_sprite)
+        self.addNewSpriteBtn = Button(self.addNewSpriteFrame, text="새로운 스프라이트 추가", command=self.add_sprite, bg="#FFFFFF", font=GlobalData["font.noto.ui.bold"])
         self.addNewSpriteBtn.pack(side=RIGHT)
 
         self.frame_split_right = Frame(self.frame, bg="#FFFFFF")
@@ -531,7 +567,7 @@ class ProjectUI():
         self.label_license = Label(self.frame_license, text=GlobalData[__type], justify=LEFT)
         self.label_license.pack(fill=BOTH)
         self.frame_license.update_ui()
-    def add_scene(self, name="", tick="100", combo="tick(s)"):
+    def add_scene(self, name="", tick="100", option="tick(s)   "):
         self.tk_scene_maker = Toplevel(window)
         self.tk_scene_maker.title("")
         self.tk_scene_maker.geometry("190x105")
@@ -543,13 +579,13 @@ class ProjectUI():
         self.entry_scene_maker_name.focus()
         self.label_scene_maker_tick = Label(self.tk_scene_maker, text="길이", anchor=S)
         self.frame_scene_maker_tick = Frame(self.tk_scene_maker)
-        self.combo_scene_maker_tick = Combobox(self.frame_scene_maker_tick, values=("tick(s)", "second(s)"), width=8)
-        self.combo_scene_maker_tick.set(combo)
+        self.var_scene_maker_tick = StringVar()
+        self.option_scene_maker_tick = OptionMenu(self.frame_scene_maker_tick, self.var_scene_maker_tick, option, "tick(s)   ", "second(s)")
         self.entry_scene_maker_tick = Entry(self.frame_scene_maker_tick, width=14)
         self.entry_scene_maker_tick.insert(END, tick)
         self.label_scene_maker_tick.pack(fill=X, ipady=2)
         self.frame_scene_maker_tick.pack()
-        self.combo_scene_maker_tick.pack(side=RIGHT)
+        self.option_scene_maker_tick.pack(side=RIGHT)
         self.entry_scene_maker_tick.pack(side=LEFT)
         self.frame_scene_maker_btn = Frame(self.tk_scene_maker)
         self.btn_scene_maker_done = Button(self.frame_scene_maker_btn, text="Done", command=self.__add_scene_done)
@@ -558,13 +594,13 @@ class ProjectUI():
         self.btn_scene_maker_done.pack(side=LEFT)
         self.btn_scene_maker_exit.pack(side=RIGHT)
     def __add_scene_done(self):
-        name, tick, combo = self.entry_scene_maker_name.get(), self.entry_scene_maker_tick.get(), self.combo_scene_maker_tick.get()
+        name, tick, option = self.entry_scene_maker_name.get(), self.entry_scene_maker_tick.get(), self.var_scene_maker_tick.get()
         self.tk_scene_maker.destroy()
         if len(name) > 10: logger("WARN", "name is too long\nname must be shorter or same 10 letters", "WARN_LENGTH_LIMIT", "ObjectHandleWarn :: SceneWarn", True); return self.add_scene(name)
-        if "" in (name.replace(" ", ""), tick): logger("WARN", "you must fill all text box", "WARN_INPUT_EMPTY", "ObjectHandleWarn :: SceneWarn", True); return self.add_scene(name, tick, combo)
+        if "" in (name.replace(" ", ""), tick): logger("WARN", "you must fill all text box", "WARN_INPUT_EMPTY", "ObjectHandleWarn :: SceneWarn", True); return self.add_scene(name, tick, option)
         try: tick = int(tick)
-        except: msgbox.showwarning("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, combo)
-        if combo == "second(s)": tick *= 20 
+        except: msgbox.showwarning("New Scene", tick+" isn't a number"); return self.add_scene(name, tick, option)
+        if option == "second(s)": tick *= 20 
         SceneData(self.data, name, tick)
     @property
     def data(self): return DataDict[self.uuid]
@@ -593,8 +629,7 @@ for package_name in listdir(folder+"script"):
     with ZipFile(file_path, "r") as zip_file:
         for f in zip_file.filelist:
             if not f.is_dir(): continue
-            #try:
-            if True:
+            try:
                 init = loads(zip_file.read(f.filename+"__init__.json"))
                 name = package_name.split(".")[0] + "." + init["name"]
                 inputs:Dict = init["inputs"]
@@ -605,7 +640,7 @@ for package_name in listdir(folder+"script"):
                     covered_inputs += ((input_name, __type_dict[input_type], *input_args),)
                 logger("INFO", "importing "+name, "INFO_IMPORT", "FileReadInfo :: ReadMotionMeta")
                 MetaLib[name] = MotionMeta(name, covered_inputs, description)
-            #except KeyError as ke: print(ke); continue
+            except KeyError as ke: print(ke); continue
 del __type_dict, package_name, file_path, zip_file, f, init, name, inputs, description, covered_inputs
 
 pro = ProjectData()

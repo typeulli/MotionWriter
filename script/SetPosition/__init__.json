@@ -1,7 +1,8 @@
 {
     "name": "SetPosition",
     "inputs": {
-        "position": ["Pos"]
+        "position": ["Pos"],
+        "moving": ["Selection", "defualt", "moving"]
     },
     "description": "Move sprite to position"
 }
