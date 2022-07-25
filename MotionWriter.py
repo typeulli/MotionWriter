@@ -54,12 +54,14 @@ def auto_smooth_fill(img: ndarray) -> ndarray:
                         b += nb; g += ng; r += nr; a += na
                         count += 1
                     if count > 0: img[y, x] = b//count, g//count, r//count, a//count
-                    
+
 @jit(nopython=True, nogil=True)
 def __rotated(pos:Tuple[int, int], center:Tuple[int, int], seta:int)->ndarray:
+    seta = seta * pi / 180
     __sin, __cos = sin(seta), cos(seta)
     a, b = center
     x, y = pos
+    print(int((x-a)*__cos - (y-b)*__sin + a), int((x-a)*__sin + (y-b)*__cos + b))
     return int((x-a)*__cos - (y-b)*__sin + a), int((x-a)*__sin + (y-b)*__cos + b)
 @jit(nopython=True, nogil=True)
 def rotate(img:ndarray, center:Tuple[int, int], seta:int)->ndarray:
@@ -87,14 +89,27 @@ def rotate(img:ndarray, center:Tuple[int, int], seta:int)->ndarray:
         except: pass
     auto_smooth_fill(new_img)
     return new_img
-
+@jit(nopython=True, nogil=True)
+def stack_img(img:ndarray, stack:ndarray, pos:Tuple[int, int])->ndarray:
+    "write img 'stack' on img 'img' considering of alpha channel"
+    h, w, c = stack.shape
+    for y in range(h):
+        for x in range(w):
+            try:
+                nx, ny = pos[0]+x, pos[1]+y
+                if nx<0 or ny<0: continue
+                b, g, r, a = img[ny, nx]
+                b2, g2, r2, a2 = stack[y, x]
+                img[ny, nx] = [b2*a2//255+b*(255-a2)//255, g2*a2//255+g*(255-a2)//255, r2*a2//255+r*(255-a2)//255, 0]
+            except: pass
+    return img
 window = Tk()
 window.withdraw()
 fake_focus_in = window.focus
 AllUUID:List[str] = []
 DataDict:Dict[str, Any] = {}
 UIDict:Dict[str, Any] = {}
-MetaLib:Dict[str, Any] = {}
+MotionMetaLib:Dict[str, Any] = {}
 GlobalData:Dict[str, Any] = {
     "img.error":PhotoImage(file=folder+"res\\error.png"),
     "img.x":PhotoImage(file=folder+"res\\x.png"),
@@ -179,6 +194,7 @@ def GetUUID(ignore:List[str]=AllUUID):
 class SpriteDataSet():
     def __init__(self)->None:
         self.x, self.y = 500, 500 #FIXME remove this
+        self.start_time = 0
 class InputType(Enum):
     Integer = 1
     Float = 2
@@ -195,10 +211,11 @@ class MotionMeta():
         self.onTick = onTick
         self.types = {inputs[i][0]:inputs[i][1] for i in range(len(inputs))}
 class MotionData():
-    def __init__(self, sprite, meta: MotionMeta):
+    def __init__(self, sprite, meta: MotionMeta, undeletable=False):
         self.uuid = GetUUID()
         self.sprite = sprite
         self.meta = meta
+        self.undeletable = undeletable
 
         
         self.start_tick = 0
@@ -332,8 +349,9 @@ class MotionUI():
         self.frame_up.pack(fill="x")
         self.label_meta_loc = Label(self.frame_up, text=self.data.meta.loc, font=GlobalData["font.noto.ui.sliant"])
         self.label_meta_loc.pack(side="left")
-        self.btn_delete = Button(self.frame_up, text="X", command=self.remove)
-        self.btn_delete.pack(side="right")
+        if not self.data.undeletable:
+            self.btn_delete = Button(self.frame_up, text="X", command=self.remove)
+            self.btn_delete.pack(side="right")
 
         self.meta_draw()
     def remove(self):
@@ -352,6 +370,9 @@ class SpriteData():
         DataDict[self.uuid] = self
         UIDict[self.uuid] = SpriteUI(self.uuid)
         self.scene.add_sprite(self)
+
+        MotionData(self, MotionMetaLib["default.ImageLoader"], undeletable=True)
+        MotionData(self, MotionMetaLib["default.SetPosition"], undeletable=True)
     def draw(self):
         self.UI.draw()
     def add_motion(self, motion:MotionData):
@@ -369,23 +390,23 @@ class SpriteData():
         del DataDict[self.uuid]
         del UIDict[self.uuid]
         return True
-    def write(self, image, tick):
+    def write(self, tick, image, dataset):
         def work_motion(sprite, dataset, image, tick, __sprite_num=0):
             if __sprite_num > len(sprite.motions)-1: return image
             sprite.motions[__sprite_num].reload_input()
             image = sprite.motions[__sprite_num].write(image, dataset, tick)
             return work_motion(sprite, dataset, image, tick, __sprite_num+1)
-        dataset = deepcopy(self.dataset)
         loaded = work_motion(self, dataset, image, tick)
         cv2.waitKey(1)
         shape = loaded.shape
         new_x_zero = dataset.x - shape[1]//2
         new_y_zero = dataset.y - shape[0]//2
         #print(self.x, self.y, shape)
-        for x in range(shape[1]):
-            for y in range(shape[0]):
-                try: image[new_y_zero+y, new_x_zero+x] = loaded[y, x]
-                except: pass
+        image = stack_img(image, loaded, (new_x_zero, new_y_zero))
+        # for x in range(shape[1]):
+        #     for y in range(shape[0]):
+        #         try: image[new_y_zero+y, new_x_zero+x] = loaded[y, x]
+        #         except: pass
         #cv2.imshow("Sprite", image)
         return image
 
@@ -393,21 +414,15 @@ class SpriteUI():
     def __init__(self, uuid:str) -> None:
         self.uuid = uuid
 
-        self.frame_sprite_list = Frame(self.data.scene.UI.frame_sprite_list, bg="#FFFFFF")
-        self.frame_sprite_list.pack(fill=X)
-        self.frame_sprite_list_up = Frame(self.frame_sprite_list, bg="#FFFFFF", cursor="hand2")
-        self.frame_sprite_list_up.pack(fill=X, side=TOP)
-        self.frame_sprite_list_up.bind("<Button-1>", lambda o: self.focus())
-        self.entry_sprite_name_list = Entry(self.frame_sprite_list_up)
+        self.frame_sprite_list = Frame(self.data.scene.UI.frame_sprite_list, bg="#FFFFFF", cursor="hand2")
+        self.frame_sprite_list.pack(fill=X, side=TOP)
+        self.frame_sprite_list.bind("<Button-1>", lambda o: self.focus())
+        self.entry_sprite_name_list = Entry(self.frame_sprite_list)
         self.entry_sprite_name_list.insert(END, self.data.init_name)
         self.entry_sprite_name_list.pack(side=LEFT)
         self.entry_sprite_name_list.bind("<Return>", lambda o: self.focus())
-        self.btn_sprite_remove = Button(self.frame_sprite_list_up, image=GlobalData["img.x"], bg="#FFFFFF", relief=SOLID, bd=0, command=self.remove)
+        self.btn_sprite_remove = Button(self.frame_sprite_list, image=GlobalData["img.x"], bg="#FFFFFF", relief=SOLID, bd=0, command=self.remove)
         self.btn_sprite_remove.pack(side=RIGHT, padx=40)
-
-        self.frame_sprite_list_down = Frame(self.frame_sprite_list, bg="#F0F0F0")
-        self.label_sprite_pos_x = Label(self.frame_sprite_list_down, text="X:", bg="#F0F0F0")
-        self.label_sprite_pos_x.pack(side=LEFT)
     def remove(self):
         isok = self.data.remove()
         if not isok: logger("WARN", "Scene must have at least 1 sprite", "WARN_SPRITE_REMOVE", "InteractionWarn :: SpriteWarn", True); return
@@ -436,11 +451,13 @@ class SpriteUI():
         self.label_sprite_info.config(text="The motions of sprite \""+self.name+"\"")
 
         [sprite.UI.unfocus() for sprite in self.data.scene.sprites]
+        self.frame_sprite_list.config(bg="#F0F0F0")
+        self.btn_sprite_remove.config(bg="#F0F0F0")
         self.frame_sprite_edit.place(x=0, y=0, relwidth=1, relheight=0.99)
-        self.frame_sprite_list_down.pack(fill=X, side=TOP)
     def unfocus(self):
+        self.frame_sprite_list.config(bg="#FFFFFF")
+        self.btn_sprite_remove.config(bg="#FFFFFF")
         self.frame_sprite_edit.place_forget()
-        self.frame_sprite_list_down.pack_forget()
     def add_motion(self):
         self.tk_add_motion = Toplevel()
         self.tk_add_motion.title("새 모션 추가")
@@ -454,7 +471,7 @@ class SpriteUI():
         self.frame_add_motion_list.pack(fill=BOTH, expand=True)
         def reload_motion_list(event, entry, frame:Frame):
             for child in frame.children.values(): child.pack_forget()
-            list_motion_name = list(MetaLib.keys())
+            list_motion_name = list(MotionMetaLib.keys())
             search = entry.get()
             if len(search) == 0:
                 recommend_motions = list(map(lambda n:(n, 0), list_motion_name))
@@ -467,11 +484,8 @@ class SpriteUI():
         self.entry_add_motion_search.bind("<KeyRelease>", partial(reload_motion_list, entry=self.entry_add_motion_search, frame=self.frame_add_motion_list))
         reload_motion_list(None, self.entry_add_motion_search, self.frame_add_motion_list)
     def __add_motion_work(self, motion_name):
-        MotionData(self.data, MetaLib[motion_name])
+        MotionData(self.data, MotionMetaLib[motion_name])
         self.tk_add_motion.destroy()
-    def remove_motion(self):
-        ...
-        #TODO
 
 class SceneData():
     def __init__(self, project, name:str, length:int) -> None:
@@ -502,11 +516,13 @@ class SceneData():
         self.UI.draw()
     def write(self, writer):
         size = self.project.video_size
+        copied_dataset = {}
+        for sprite in self.sprites: copied_dataset[sprite.uuid] = deepcopy(sprite.dataset)
         for tick in range(self.length):
             tick_image = zeros((size[1], size[0], 4), dtype=uint8)
             tick_image[:, :, :3] = 255
             for sprite in self.sprites:
-                tick_image = sprite.write(tick_image, tick)
+                tick_image = sprite.write(tick, tick_image, copied_dataset[sprite.uuid])
             writer.write(cv2.cvtColor(tick_image, cv2.COLOR_BGRA2BGR))
     @property
     def UI(self): return UIDict[self.uuid]
@@ -671,34 +687,34 @@ class ProjectUI():
         self.win_extract.bind("<Escape>", lambda e: self.win_extract.withdraw())
         #self.win_extract.option_add("*Foreground", "#FFFFFF")
         #self.win_extract.option_add("*Background", "#383f49")
-        self.win_extract.option_add("*Background", "#FFFFFF")
-        frame = Frame(self.win_extract)
+        #self.win_extract.option_add("*Background", "#FFFFFF")
+        frame = Frame(self.win_extract, bg="#FFFFFF")
         frame.pack(fill=BOTH, expand=True)
 
-        frame_button = Frame(frame)
+        frame_button = Frame(frame, bg="#FFFFFF")
         frame_button.pack(side=BOTTOM, fill=X, pady=15, padx=15)
-        btn_next_or_done = Button(frame_button, text="다음 >")
+        btn_next_or_done = Button(frame_button, text="다음 >", bg="#FFFFFF")
         btn_next_or_done.pack(side=RIGHT, padx=10)
         #btn_prev_or_cancel = Button(frame_button, text="취소")
         #btn_prev_or_cancel.pack(side=RIGHT, padx=10)
 
-        frame_process_position = Frame(frame)
+        frame_process_position = Frame(frame, bg="#FFFFFF")
         frame_process_position.pack(side=TOP, fill=X, pady=15, padx=15)
-        frame_process = Frame(frame_process_position)
+        frame_process = Frame(frame_process_position, bg="#FFFFFF")
         frame_process.pack()
-        label_process_1 = Label(frame_process, text="동영상 정보 설정", font=GlobalData["font.noto.ui.bold"])
+        label_process_1 = Label(frame_process, text="동영상 정보 설정", font=GlobalData["font.noto.ui.bold"], bg="#FFFFFF")
         label_process_1.pack(side=LEFT, padx=5)
-        Label(frame_process, text=">", font=GlobalData["font.noto.text14"], fg="#c0c0c0").pack(side=LEFT, padx=5)#, fg="#00a000"
-        label_process_2 = Label(frame_process, text="동영상 추출", font=GlobalData["font.noto.ui.bold"], state=DISABLED)
+        Label(frame_process, text=">", font=GlobalData["font.noto.text14"], fg="#c0c0c0", bg="#FFFFFF").pack(side=LEFT, padx=5)#, fg="#00a000"
+        label_process_2 = Label(frame_process, text="동영상 추출", font=GlobalData["font.noto.ui.bold"], state=DISABLED, bg="#FFFFFF")
         label_process_2.pack(side=LEFT, padx=5)
-        Label(frame_process, text=">", font=GlobalData["font.noto.text14"], fg="#c0c0c0").pack(side=LEFT, padx=5)#, fg="#00a000"
-        label_process_3 = Label(frame_process, text="동영상 추출 완료", font=GlobalData["font.noto.ui.bold"], state=DISABLED)
+        Label(frame_process, text=">", font=GlobalData["font.noto.text14"], fg="#c0c0c0", bg="#FFFFFF").pack(side=LEFT, padx=5)#, fg="#00a000"
+        label_process_3 = Label(frame_process, text="동영상 추출 완료", font=GlobalData["font.noto.ui.bold"], state=DISABLED, bg="#FFFFFF")
         label_process_3.pack(side=LEFT, padx=5)
 
-        main_frame = Frame(frame)
+        main_frame = Frame(frame, bg="#FFFFFF")
         main_frame.pack(fill=BOTH, expand=True, padx=15)
 
-        frame_save_info = Frame(main_frame)
+        frame_save_info = Frame(main_frame, bg="#FFFFFF")
         # frame_save_type = Frame(frame_save_info)
         # label_save_type = Label(frame_save_type, text="파일 확장자", font=GlobalData["font.noto.ui.bold"], anchor=W)
         # label_save_type.pack(fill=X, side=TOP, padx=3)
@@ -709,21 +725,21 @@ class ProjectUI():
         # radio_save_type_avi.pack(side=LEFT, padx=45)
         # radio_save_type_gif = Radiobutton(frame_save_type, image=GlobalData["img.btn-gif"], compound=TOP, overrelief=SOLID, indicatoron=False, variable=intVar, value=3, relief=SOLID, bd=0, selectcolor="#404040")
         # radio_save_type_gif.pack(side=LEFT, padx=45)
-        frame_save_loc = Frame(frame_save_info)
+        frame_save_loc = Frame(frame_save_info, bg="#FFFFFF")
         frame_save_loc.pack(fill=X, expand=True)
-        label_save_loc = Label(frame_save_loc, text="저장 위치", font=GlobalData["font.noto.ui.bold"], anchor=W)
+        label_save_loc = Label(frame_save_loc, text="저장 위치", font=GlobalData["font.noto.ui.bold"], anchor=W, bg="#FFFFFF")
         label_save_loc.pack(fill=X, side=TOP, padx=3)
-        entry_save_loc = Label(frame_save_loc, width=52, bd=1, relief=SOLID, anchor=W, text="C:/Users/USER/Desktop/test.avi")#"C:/"+self.data.name+".gif" #FIXME remove this
+        entry_save_loc = Label(frame_save_loc, width=52, bd=1, relief=SOLID, anchor=W, text="C:/Users/USER/Desktop/test.avi", bg="#FFFFFF")#"C:/"+self.data.name+".gif" #FIXME remove this
         entry_save_loc.pack(side=LEFT, padx=5)
-        btn_save_loc = Button(frame_save_loc, text="...")
+        btn_save_loc = Button(frame_save_loc, text="...", bg="#FFFFFF")
         btn_save_loc.pack(side=LEFT, padx=5)
         def select_save_loc(entry:Entry):
             self.extract_path.set(asksaveasfilename(filetypes=(("비디오 파일", ".mp4 .avi .gif"), ("모든 파일", "*.*"))))
             entry.config(text=self.extract_path.get())
         btn_save_loc.config(command=partial(select_save_loc, entry_save_loc))
 
-        frame_working_info = Frame(main_frame)
-        label_working_info = Label(frame_working_info, text="작업 중 (0%)", font=GlobalData["font.noto.ui.bold"], anchor=W)
+        frame_working_info = Frame(main_frame, bg="#FFFFFF")
+        label_working_info = Label(frame_working_info, text="작업 중 (0%)", font=GlobalData["font.noto.ui.bold"], anchor=W, bg="#FFFFFF")
         label_working_info.pack(fill=X, padx=3, pady=10)
         progress_bar = Progressbar(frame_working_info, orient=HORIZONTAL, mode="determinate", maximum=100)
         progress_bar.pack(fill=X)
@@ -733,7 +749,7 @@ class ProjectUI():
             progress_bar.update()
         self.update_extract_progress = partial(__update, label=label_working_info, progress_bar=progress_bar)
 
-        frame_done_info = Frame(main_frame)
+        frame_done_info = Frame(main_frame, bg="#FFFFFF")
 
         self.extract_win_mode = 0
         packs = [
@@ -848,7 +864,7 @@ for package_name in listdir(folder+"script"):
                 exec(zip_file.read(f.filename+"onTick.py").decode()+"\nfunc = onTick", data)
                 onTick = data["func"]
                 logger("INFO", "importing "+name, "INFO_IMPORT", "FileReadInfo :: ReadMotionMeta")
-                MetaLib[name] = MotionMeta(name, covered_inputs, description, onTick)
+                MotionMetaLib[name] = MotionMeta(name, covered_inputs, description, onTick)
             except KeyError as ke: print(ke); continue
 try: del __type_dict, package_name, file_path, zip_file, f, init, name, inputs, description, covered_inputs, data, onTick
 except: pass
