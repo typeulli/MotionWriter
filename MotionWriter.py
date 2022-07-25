@@ -1,3 +1,4 @@
+from copy import deepcopy
 from enum import Enum
 from functools import partial
 from json import loads
@@ -53,8 +54,15 @@ def auto_smooth_fill(img: ndarray) -> ndarray:
                         b += nb; g += ng; r += nr; a += na
                         count += 1
                     if count > 0: img[y, x] = b//count, g//count, r//count, a//count
+                    
 @jit(nopython=True, nogil=True)
-def rotate(img, seta, center):
+def __rotated(pos:Tuple[int, int], center:Tuple[int, int], seta:int)->ndarray:
+    __sin, __cos = sin(seta), cos(seta)
+    a, b = center
+    x, y = pos
+    return int((x-a)*__cos - (y-b)*__sin + a), int((x-a)*__sin + (y-b)*__cos + b)
+@jit(nopython=True, nogil=True)
+def rotate(img:ndarray, center:Tuple[int, int], seta:int)->ndarray:
     "return image of spinned img by seta and pos without using cv2 library"
     h, w, c = img.shape
     seta = seta * pi / 180
@@ -88,9 +96,6 @@ DataDict:Dict[str, Any] = {}
 UIDict:Dict[str, Any] = {}
 MetaLib:Dict[str, Any] = {}
 GlobalData:Dict[str, Any] = {
-    "img.btn-mp4": PhotoImage(file=folder+"res\\image\\btn-mp4.png"),
-    "img.btn-avi": PhotoImage(file=folder+"res\\image\\btn-avi.png"),
-    "img.btn-gif": PhotoImage(file=folder+"res\\image\\btn-gif.png"),
     "img.error":PhotoImage(file=folder+"res\\error.png"),
     "img.x":PhotoImage(file=folder+"res\\x.png"),
 
@@ -105,12 +110,13 @@ GlobalData:Dict[str, Any] = {
     "functions": {
         "image.imread": imread,
         "image.show": cv2.imshow,
-        "image.rotate": lambda img, seta, center: rotate(img, seta, tuple(center)),
+        "image.rotate": lambda img, center, seta: rotate(img, tuple(center), seta),
         "image.auto_smooth_fill": auto_smooth_fill,
 
         "math.sin": sin,
         "math.cos": cos,
-        "math.pi": pi
+        "math.pi": pi,
+        "math.__rotated": lambda pos, center, seta: __rotated(tuple(pos), tuple(center), seta)
     }
 }
 window.option_add("*Font", GlobalData["font.noto.ui"])
@@ -170,8 +176,9 @@ def GetUUID(ignore:List[str]=AllUUID):
     AllUUID.append(uid)
     return uid
 
-class FrameWork():
-    def __init__(self) -> None: ...
+class SpriteDataSet():
+    def __init__(self)->None:
+        self.x, self.y = 500, 500 #FIXME remove this
 class InputType(Enum):
     Integer = 1
     Float = 2
@@ -197,7 +204,6 @@ class MotionData():
         self.start_tick = 0
         self.end_tick = self.sprite.scene.length
         self.__ui_data__:Dict[str, List[Any]] = {}
-        self.getFunc:Dict[str,FunctionType] = {}
         self.getInput:Dict[str,Any] = {}
         for name, input_type, *input_args in self.meta.inputs:
             self.getInput[name] = {
@@ -213,19 +219,22 @@ class MotionData():
         DataDict[self.uuid] = self
         UIDict[self.uuid] = MotionUI(self.uuid)
         self.sprite.add_motion(self)
+    def reload_input(self):
+        [f() for f in self.UI.getFunc]
     @property
     def UI(self): return UIDict[self.uuid]
     def remove(self):
         self.sprite.remove_motion(self)
         del DataDict[self.uuid]
         del UIDict[self.uuid]
-    def write(self, image, start_tick, end_tick, tick):
-        img = self.meta.onTick(image, start_tick, end_tick, tick, GlobalData["functions"], self.getInput)
+    def write(self, image, dataset: SpriteDataSet, tick):
+        img = self.meta.onTick(image, dataset, tick, self.getInput, GlobalData["functions"])
         return img
 
 class MotionUI():
     def __init__(self, uuid:str) -> None:
         self.uuid = uuid
+        self.getFunc: List[FunctionType] = []
     def meta_draw(self):
         frame = Frame(self.frame_repos)
         frame.pack(side=TOP, fill=BOTH)
@@ -242,6 +251,7 @@ class MotionUI():
                     except: data.getInput[name] = 0
                     var.set(data.getInput[name])
                 entry.bind("<Return>", partial(done, var=var, data=self.data, name=name))
+                self.getFunc.append(partial(done, event=None, var=var, data=self.data, name=name))
             elif input_type == InputType.Float:
                 var = StringVar(value=0)
                 entry = Entry(frame, textvariable=var)
@@ -252,6 +262,7 @@ class MotionUI():
                     except: data.getInput[name] = 0
                     var.set(data.getInput[name])
                 entry.bind("<Return>", partial(done, var=var, data=self.data, name=name))
+                self.getFunc.append(partial(done, event=None, var=var, data=self.data, name=name))
             elif input_type == InputType.String:
                 var = StringVar()
                 entry = Entry(frame, textvariable=var)
@@ -260,12 +271,14 @@ class MotionUI():
                     fake_focus_in()
                     data.getInput[name] = var.get()
                 entry.bind("<Return>", partial(done, var=var, data=self.data, name=name))
+                self.getFunc.append(partial(done, event=None, var=var, data=self.data, name=name))
             elif input_type == InputType.Boolean:
                 var = StringVar()
                 def done(data, name, selected):
                     fake_focus_in()
                     data.getInput[name] = {"true":True, "false":False}[selected]
                 OptionMenu(frame, var, "true", *("true", "false"), command=partial(done, data=self.data, name=name)).grid(row=line, column=2, sticky=W)
+                self.getFunc.append(partial(done, data=self.data, name=name))
             elif input_type == InputType.File:
                 label = Label(frame, text="C:/", font="TkDefaultFont")
                 label.grid(row=line, column=2, sticky=W)
@@ -274,6 +287,9 @@ class MotionUI():
                     data.getInput[name] = askopenfilename(filetypes=(("All Files", "*.*"),))
                     label.config(text=data.getInput[name])
                 Button(frame, text="...", command=partial(done, data=self.data, name=name, label=label)).grid(row=line, column=3, sticky=W)
+                #self.getFunc.append(partial(done, data=self.data, name=name, label=label))
+                #Because this is a file input, which is automatically updated, we don't need to add a function to the getFunc list
+                #If we do that, we'll have to set a file each time we make a new video file
             elif input_type == InputType.Selection:
                 var = StringVar()
                 def done(selected, data, name):
@@ -281,6 +297,7 @@ class MotionUI():
                     fake_focus_in()
                     data.getInput[name] = selected
                 OptionMenu(frame, var, input_args[0], *input_args, command=partial(done, data=self.data, name=name)).grid(row=line, column=2, sticky=W)
+                self.getFunc.append(partial(done, data=self.data, name=name))
             elif input_type == InputType.Pos:
                 varx = StringVar(value=0)
                 vary = StringVar(value=0)
@@ -300,6 +317,8 @@ class MotionUI():
                     var.set(data.getInput[name][slot])
                 entryx.bind("<Return>", partial(done, var=varx, data=self.data, name=name, slot=0))
                 entryy.bind("<Return>", partial(done, var=vary, data=self.data, name=name, slot=1))
+                self.getFunc.append(partial(done, event=None, var=varx, data=self.data, name=name, slot=0))
+                self.getFunc.append(partial(done, event=None, var=vary, data=self.data, name=name, slot=1))
 
             line += 1
     @property
@@ -322,14 +341,13 @@ class MotionUI():
         for obj in self.__dict__:
             try: self.__getattribute__(obj).destroy()
             except: pass
-
 class SpriteData():
     def __init__(self, scene, name:str) -> None:
         self.uuid = GetUUID()
         self.scene = scene
         self.init_name = name
         self.motions:List[MotionData] = []
-        self.x, self.y = 400, 400 #FIXME remove this
+        self.dataset:SpriteDataSet = SpriteDataSet()
 
         DataDict[self.uuid] = self
         UIDict[self.uuid] = SpriteUI(self.uuid)
@@ -352,20 +370,23 @@ class SpriteData():
         del UIDict[self.uuid]
         return True
     def write(self, image, tick):
-        def work_motion(sprite, n, image, tick):
-            if n > len(sprite.motions)-1: return image
-            image = sprite.motions[n].write(image, 0, self.scene.length, tick)
-            return work_motion(sprite, n+1, image, tick)
-        loaded = work_motion(self, 0, image, tick)
-        shape = image.shape
-        new_x_zero = self.x - shape[1]//2
-        new_y_zero = self.y - shape[0]//2
+        def work_motion(sprite, dataset, image, tick, __sprite_num=0):
+            if __sprite_num > len(sprite.motions)-1: return image
+            sprite.motions[__sprite_num].reload_input()
+            image = sprite.motions[__sprite_num].write(image, dataset, tick)
+            return work_motion(sprite, dataset, image, tick, __sprite_num+1)
+        dataset = deepcopy(self.dataset)
+        loaded = work_motion(self, dataset, image, tick)
+        cv2.waitKey(1)
+        shape = loaded.shape
+        new_x_zero = dataset.x - shape[1]//2
+        new_y_zero = dataset.y - shape[0]//2
         #print(self.x, self.y, shape)
-        for x in range(shape[1]//2):
-            for y in range(shape[0]//2):
-                #print(x, y, new_x_zero, new_y_zero)
+        for x in range(shape[1]):
+            for y in range(shape[0]):
                 try: image[new_y_zero+y, new_x_zero+x] = loaded[y, x]
                 except: pass
+        #cv2.imshow("Sprite", image)
         return image
 
 class SpriteUI():
@@ -568,10 +589,10 @@ class SceneUI():
         self.frame.place_forget()
 
 class ProjectData():
-    def __init__(self, name:str="untitled") -> None:
+    def __init__(self, name:str="untitled", video_size=(1000, 1000)) -> None:
         self.name = name
         self.uuid = GetUUID()
-        self.video_size = (500, 500)
+        self.video_size = video_size
         DataDict[self.uuid] = self
 
         self.scenes:List[SceneData] = []

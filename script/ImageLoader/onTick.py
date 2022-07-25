@@ -1,2 +1,2 @@
-def onTick(image, start_tick, end_tick, tick, funcs, data):
+def onTick(image, dataset, tick, data, funcs):
     return funcs["image.imread"](data["file"])
