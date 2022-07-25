@@ -217,9 +217,10 @@ class MotionData():
         self.meta = meta
         self.undeletable = undeletable
 
-        
-        self.start_tick = 0
-        self.end_tick = self.sprite.scene.length
+        self.start_time = 0
+        self.end_time = self.sprite.scene.length
+        self.sep_time = 1
+        self.hold_time = 1
         self.__ui_data__:Dict[str, List[Any]] = {}
         self.getInput:Dict[str,Any] = {}
         for name, input_type, *input_args in self.meta.inputs:
@@ -245,6 +246,9 @@ class MotionData():
         del DataDict[self.uuid]
         del UIDict[self.uuid]
     def write(self, image, dataset: SpriteDataSet, tick):
+        if tick < self.start_time: return image
+        if tick > self.end_time: return image
+        if self.sep_time != 1 and (tick-self.start_time) % self.sep_time < self.hold_time: return image
         img = self.meta.onTick(image, dataset, tick, self.getInput, GlobalData["functions"])
         return img
 
@@ -352,7 +356,55 @@ class MotionUI():
         if not self.data.undeletable:
             self.btn_delete = Button(self.frame_up, text="X", command=self.remove)
             self.btn_delete.pack(side="right")
+        
+        self.var_start = StringVar(value=0)
+        self.var_end = StringVar(value=self.data.sprite.scene.length)
+        self.var_sep = StringVar(value=1)
+        self.var_hold = StringVar(value=1)
+        self.frame_run_info = Frame(self.frame_repos)
+        self.frame_run_info.pack(fill="x")
+        self.entry_start = Entry(self.frame_run_info, textvariable=self.var_start, width=4)
+        self.entry_start.pack(side="left")
+        Label(self.frame_run_info, text="ticks(s)  to  ", font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
+        self.entry_end = Entry(self.frame_run_info, textvariable=self.var_end, width=4)
+        self.entry_end.pack(side="left")
+        Label(self.frame_run_info, text="tick(s)  each  ", font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
+        self.entry_sep = Entry(self.frame_run_info, textvariable=self.var_sep, width=4)
+        self.entry_sep.pack(side="left")
+        Label(self.frame_run_info, text="tick(s)  holds  ", font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
+        self.entry_hold = Entry(self.frame_run_info, textvariable=self.var_hold, width=4)
+        self.entry_hold.pack(side="left")
+        Label(self.frame_run_info, text="tick(s)", font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
 
+        
+        def done_start(e, var, data):
+            fake_focus_in()
+            try: data.start_time = round(float(var.get()))
+            except: data.start_time = 0
+            var.set(data.start_time)
+        def done_end(e, var, data):
+            fake_focus_in()
+            try: data.end_time = round(float(var.get()))
+            except: data.end_time = 0
+            var.set(data.end_time)
+        def done_sep(e, var, data):
+            fake_focus_in()
+            try: data.sep_time = round(float(var.get()))
+            except: data.sep_time = 0
+            var.set(data.sep_time)
+        def done_hold(e, var, data):
+            fake_focus_in()
+            try: data.hold_time = round(float(var.get()))
+            except: data.hold_time = 0
+            var.set(data.hold_time)
+        self.getFunc    .append(            partial(done_start, e=None, var=self.var_start, data=self.data))
+        self.getFunc    .append(            partial(done_end  , e=None, var=self.var_end  , data=self.data))
+        self.getFunc    .append(            partial(done_sep  , e=None, var=self.var_sep  , data=self.data))
+        self.getFunc    .append(            partial(done_hold , e=None, var=self.var_hold , data=self.data))
+        self.entry_start.bind  ("<Return>", partial(done_start,         var=self.var_start, data=self.data))
+        self.entry_end  .bind  ("<Return>", partial(done_end  ,         var=self.var_end  , data=self.data))
+        self.entry_sep  .bind  ("<Return>", partial(done_sep  ,         var=self.var_sep  , data=self.data))
+        self.entry_sep  .bind  ("<Return>", partial(done_hold ,         var=self.var_hold , data=self.data))
         self.meta_draw()
     def remove(self):
         self.data.remove()
@@ -736,6 +788,7 @@ class ProjectUI():
         def select_save_loc(entry:Entry):
             self.extract_path.set(asksaveasfilename(filetypes=(("비디오 파일", ".mp4 .avi .gif"), ("모든 파일", "*.*"))))
             entry.config(text=self.extract_path.get())
+            self.win_extract.focus()
         btn_save_loc.config(command=partial(select_save_loc, entry_save_loc))
 
         frame_working_info = Frame(main_frame, bg="#FFFFFF")
@@ -768,6 +821,7 @@ class ProjectUI():
             for frame in frames: frame.pack_forget(); frame.update()
             packs[self.extract_win_mode]()
             if self.extract_win_mode == 1: self.__extract()
+            self.win_extract.focus()
         btn_next_or_done.config(command=partial(next_or_done, btn_next_or_done, [frame_save_info, frame_working_info, frame_done_info], [label_process_1, label_process_2, label_process_3], packs))
         self.win_extract.deiconify()
     def __extract(self):
