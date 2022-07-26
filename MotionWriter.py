@@ -1,12 +1,12 @@
 from copy import deepcopy
 from enum import Enum
 from functools import partial
-from json import loads
+from json import dump, loads
 from math import cos, pi, sin
 from os import listdir
 from time import localtime, strftime, time
 from tkinter import BOTH, BOTTOM, DISABLED, END, HORIZONTAL, LEFT, NORMAL, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Frame, IntVar, Label, Menu, PhotoImage, Radiobutton, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
-from tkinter.filedialog import askopenfilename, asksaveasfilename
+from tkinter.filedialog import askopenfilename, asksaveasfile, asksaveasfilename
 from tkinter.font import BOLD, ITALIC, Font
 from tkinter.ttk import OptionMenu, Entry, Progressbar
 import tkinter.messagebox as msgbox
@@ -22,7 +22,6 @@ from thefuzz.process import extract
 import cv2
 from numpy import zeros, uint8, ndarray
 from numba import jit
-
 folder = dirname(realpath(__file__)) + "\\"
 del dirname, realpath
 argv = sys.argv
@@ -89,7 +88,8 @@ def rotate(img:ndarray, center:Tuple[int, int], seta:int)->ndarray:
         except: pass
     auto_smooth_fill(new_img)
     return new_img
-@jit(nopython=True, nogil=True)
+#if this function is decorated by @jit, it will be cause error (The program will exited without any error)
+#@jit(nopython=True, nogil=True) 
 def stack_img(img:ndarray, stack:ndarray, pos:Tuple[int, int])->ndarray:
     "write img 'stack' on img 'img' considering of alpha channel"
     h, w, c = stack.shape
@@ -100,8 +100,9 @@ def stack_img(img:ndarray, stack:ndarray, pos:Tuple[int, int])->ndarray:
                 if nx<0 or ny<0: continue
                 b, g, r, a = img[ny, nx]
                 b2, g2, r2, a2 = stack[y, x]
-                img[ny, nx] = [b2*a2//255+b*(255-a2)//255, g2*a2//255+g*(255-a2)//255, r2*a2//255+r*(255-a2)//255, 0]
-            except: pass
+                alpha = a2/255
+                img[ny, nx] = [int(b2*alpha+b*(1-alpha)), int(g2*alpha+g*(1-alpha)), int(r2*alpha+r*(1-alpha)), 255]
+            except IndexError: pass
     return img
 window = Tk()
 window.withdraw()
@@ -195,6 +196,8 @@ class SpriteDataSet():
     def __init__(self)->None:
         self.x, self.y = 500, 500 #FIXME remove this
         self.start_time = 0
+    def __json__(self):
+        return {"x":self.x, "y":self.y}
 class InputType(Enum):
     Integer = 1
     Float = 2
@@ -221,6 +224,7 @@ class MotionData():
         self.end_time = self.sprite.scene.length
         self.sep_time = 1
         self.hold_time = 1
+        self.run_time = 0
         self.__ui_data__:Dict[str, List[Any]] = {}
         self.getInput:Dict[str,Any] = {}
         for name, input_type, *input_args in self.meta.inputs:
@@ -237,6 +241,16 @@ class MotionData():
         DataDict[self.uuid] = self
         UIDict[self.uuid] = MotionUI(self.uuid)
         self.sprite.add_motion(self)
+    def __json__(self):
+        json = {
+            "uuid": self.uuid,
+            "meta": self.meta.loc,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "sep_time": self.sep_time,
+            "hold_time": self.hold_time
+        }
+        return json
     def reload_input(self):
         [f() for f in self.UI.getFunc]
     @property
@@ -249,7 +263,8 @@ class MotionData():
         if tick < self.start_time: return image
         if tick > self.end_time: return image
         if self.sep_time != 1 and (tick-self.start_time) % self.sep_time < self.hold_time: return image
-        img = self.meta.onTick(image, dataset, tick, self.getInput, GlobalData["functions"])
+        self.run_time += 1
+        img = self.meta.onTick(image, dataset, tick, self.getInput, GlobalData["functions"], (self.start_time, self.end_time, self.sep_time, self.run_time))
         return img
 
 class MotionUI():
@@ -425,6 +440,17 @@ class SpriteData():
 
         MotionData(self, MotionMetaLib["default.ImageLoader"], undeletable=True)
         MotionData(self, MotionMetaLib["default.SetPosition"], undeletable=True)
+    def __json__(self):
+        json = {
+            "uuid": self.uuid,
+            "name": self.UI.name,
+            "init_name": self.init_name,
+            "dataset": self.dataset.__json__(),
+            "motions": {}
+        }
+        for motion in self.motions:
+            json["motions"][motion.uuid] = motion.__json__()
+        return json
     def draw(self):
         self.UI.draw()
     def add_motion(self, motion:MotionData):
@@ -454,7 +480,9 @@ class SpriteData():
         new_x_zero = dataset.x - shape[1]//2
         new_y_zero = dataset.y - shape[0]//2
         #print(self.x, self.y, shape)
+        print(image.shape, loaded.shape, new_x_zero, new_y_zero)
         image = stack_img(image, loaded, (new_x_zero, new_y_zero))
+        print(1)
         # for x in range(shape[1]):
         #     for y in range(shape[0]):
         #         try: image[new_y_zero+y, new_x_zero+x] = loaded[y, x]
@@ -553,6 +581,16 @@ class SceneData():
         UIDict[self.uuid] = SceneUI(self.uuid)
         self.project.add_scene(self)
         SpriteData(self, "New Sprite")
+    def __json__(self):
+        json = {
+            "name": self.name,
+            "length": self.length,
+            "uuid": self.uuid,
+            "sprites": {}
+        }
+        for sprite in self.sprites:
+            json["sprites"][sprite.UI.name] = sprite.__json__()
+        return json
     def remove_sprite(self, sd:SpriteData):
         try: self.sprites[self.sprites.index(sd)-1].UI.focus()
         except: self.sprites[self.sprites.index(sd)+1].UI.focus()
@@ -575,6 +613,7 @@ class SceneData():
             tick_image[:, :, :3] = 255
             for sprite in self.sprites:
                 tick_image = sprite.write(tick, tick_image, copied_dataset[sprite.uuid])
+            print(tick_image.shape)
             writer.write(cv2.cvtColor(tick_image, cv2.COLOR_BGRA2BGR))
     @property
     def UI(self): return UIDict[self.uuid]
@@ -679,6 +718,16 @@ class ProjectData():
         self.UI.addNewSceneBtn.pack(side=LEFT, padx=5)
     @property
     def UI(self): return UIDict[self.uuid]
+    def __json__(self):
+        json =  {
+            "name": self.name,
+            "uuid": self.uuid,
+            "video_size": self.video_size,
+            "scenes": {}
+        }
+        for scene in self.scenes:
+            json["scenes"][scene.name] = scene.__json__()
+        return json
 class ProjectUI():
     def __init__(self, uuid:str):
         self.uuid = uuid
@@ -834,7 +883,12 @@ class ProjectUI():
         writer.release()
         #TODO 동영상 추출
     def save_as_new_name(self):
-        __file = askopenfilename#TODO 프로젝트 저장하기
+        loc = asksaveasfilename(title="Save As..", filetypes=[("MotionWriterProject", "*.mwp")])
+        self.__save(loc)
+    def __save(self, loc: str):
+        if not loc.endswith(".mwp"): loc += ".mwp"
+        with open(loc, "w") as file:
+            dump(self.data.__json__(), file, indent=4)
     def open_win_license(self, __type):
         self.win_license.deiconify()
         self.win_license.title("MotionWriter :: License :: " + __type.replace("license.", ""))
@@ -924,5 +978,5 @@ try: del __type_dict, package_name, file_path, zip_file, f, init, name, inputs, 
 except: pass
 
 pro = ProjectData()
-SceneData(pro, "Scene 1", 20)
+SceneData(pro, "Scene 1", 2000)
 pro.draw()
