@@ -1,0 +1,90 @@
+{
+    "name": "untitled",
+    "uuid": "af778575-3c6c-422b-8d82-0cdf15c8645d",
+    "video_size": [
+        1000,
+        1000
+    ],
+    "scenes": {
+        "Scene 1": {
+            "name": "Scene 1",
+            "length": 40,
+            "uuid": "026402a4-b04c-441c-a701-bf7b04bdb454",
+            "sprites": {
+                "New Sprite": {
+                    "name": "New Sprite",
+                    "uuid": "fe5278b3-6080-4c4c-a80c-94ed45fb115b",
+                    "dataset": {
+                        "x": 500,
+                        "y": 500
+                    },
+                    "motions": {
+                        "620f1c3d-8883-403c-8c65-eab9401ea983": {
+                            "meta": "default.ImageLoader",
+                            "uuid": "620f1c3d-8883-403c-8c65-eab9401ea983",
+                            "inputs": {
+                                "file": "D:/Project/MotionWriter/res/egg.jpg",
+                                "position": [
+                                    500,
+                                    250
+                                ],
+                                "angle": 10,
+                                "center": [
+                                    500,
+                                    500
+                                ]
+                            },
+                            "undeletable": true,
+                            "start_time": 0,
+                            "end_time": 40,
+                            "sep_time": 1,
+                            "hold_time": 1
+                        },
+                        "16919bf2-2485-483f-891a-3e0f05d5ca91": {
+                            "meta": "default.SetPosition",
+                            "uuid": "16919bf2-2485-483f-891a-3e0f05d5ca91",
+                            "inputs": {
+                                "file": "D:/Project/MotionWriter/res/egg.jpg",
+                                "position": [
+                                    500,
+                                    250
+                                ],
+                                "angle": 10,
+                                "center": [
+                                    500,
+                                    500
+                                ]
+                            },
+                            "undeletable": true,
+                            "start_time": 0,
+                            "end_time": 1,
+                            "sep_time": 1,
+                            "hold_time": 1
+                        },
+                        "0eccc71c-e701-495b-9f7a-f69332b6680c": {
+                            "meta": "default.Rotation",
+                            "uuid": "0eccc71c-e701-495b-9f7a-f69332b6680c",
+                            "inputs": {
+                                "file": "D:/Project/MotionWriter/res/egg.jpg",
+                                "position": [
+                                    500,
+                                    250
+                                ],
+                                "angle": 10,
+                                "center": [
+                                    500,
+                                    500
+                                ]
+                            },
+                            "undeletable": false,
+                            "start_time": 0,
+                            "end_time": 40,
+                            "sep_time": 1,
+                            "hold_time": 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

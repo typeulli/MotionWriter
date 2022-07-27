@@ -1,3 +1,4 @@
+from sys import exit
 from copy import deepcopy
 from enum import Enum
 from functools import partial
@@ -5,13 +6,13 @@ from json import dump, loads
 from math import cos, pi, sin
 from os import listdir
 from time import localtime, strftime, time
-from tkinter import BOTH, BOTTOM, DISABLED, END, HORIZONTAL, LEFT, NORMAL, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Frame, IntVar, Label, Menu, PhotoImage, Radiobutton, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
-from tkinter.filedialog import askopenfilename, asksaveasfile, asksaveasfilename
+from tkinter import BOTH, BOTTOM, DISABLED, END, HORIZONTAL, LEFT, NORMAL, RIGHT, S, SOLID, TOP, W, X, Y, Canvas, Frame, Label, Menu, PhotoImage, Scrollbar, StringVar, Tk, Button, Toplevel, Scale
+from tkinter.filedialog import askopenfilename, asksaveasfilename
 from tkinter.font import BOLD, ITALIC, Font
 from tkinter.ttk import OptionMenu, Entry, Progressbar
 import tkinter.messagebox as msgbox
 from types import FunctionType
-from typing import Any, Dict, List, Literal, Tuple
+from typing import Any, Dict, List, Literal, Tuple, Union
 from uuid import uuid4
 from os.path import dirname, realpath, exists
 from hashlib import sha256
@@ -25,14 +26,14 @@ from numba import jit
 folder = dirname(realpath(__file__)) + "\\"
 del dirname, realpath
 argv = sys.argv
-
-if (not "--debug" in argv) and (not exists(folder + "script\\enable_debug.config")):
+if (not "--debug" in argv):
     if not "--onHandler" in argv:
         from subprocess import call
-        try: call(folder+"Handler.exe")
-        except: call("python "+folder+"Handler.py")
+        call(folder+"Handler.exe "+" ".join(argv[1:]) + " > nul")
+        call("python "+folder+"Handler.py "+" ".join(argv[1:]) + " > nul")
         exit()
 del exists
+
 
 # prefab functions
 def imread(path):
@@ -141,7 +142,7 @@ def logger(_type: Literal["INFO", "WARN", "ERROR"], _string: str, _code: str, _s
     print(text)
     if _showUI: {"ERROR":msgbox.showerror, "WARN":msgbox.showwarning, "INFO":msgbox.showinfo}[_type]("MotionWriter", _source + "\n" + _string + "\n" + "CODE: " + _code)
     if _type == "ERROR": exit()
-if not "--dev" in argv:
+if not "--debug" in argv:
     def exc_hook(exctype: type, value, traceback):
         text = "Traceback (most recent call last):\n" + " ".join(format_tb(traceback)) + exctype.__name__
         if len(str(value)): text += ": " + str(value)
@@ -207,15 +208,16 @@ class InputType(Enum):
     Selection = 6
     Pos = 7
 class MotionMeta():
-    def __init__(self, loc: str, inputs: Tuple[Tuple[str, InputType, Tuple[Any, ...]], ...], description: str, onTick) -> None:
+    def __init__(self, loc: str, inputs: List[List[Union[str, InputType, List[Any]]]], description: str, onTick) -> None:
         self.loc = loc
         self.inputs = inputs
         self.description = description
         self.onTick = onTick
         self.types = {inputs[i][0]:inputs[i][1] for i in range(len(inputs))}
 class MotionData():
-    def __init__(self, sprite, meta: MotionMeta, undeletable=False):
-        self.uuid = GetUUID()
+    def __init__(self, sprite, meta: MotionMeta, undeletable=False, __uuid:str=None, inputs={}):
+        if __uuid != None: self.uuid = __uuid
+        else: self.uuid = GetUUID()
         self.sprite = sprite
         self.meta = meta
         self.undeletable = undeletable
@@ -226,7 +228,7 @@ class MotionData():
         self.hold_time = 1
         self.run_time = 0
         self.__ui_data__:Dict[str, List[Any]] = {}
-        self.getInput:Dict[str,Any] = {}
+        self.getInput:Dict[str,Any] = inputs
         for name, input_type, *input_args in self.meta.inputs:
             self.getInput[name] = {
                 InputType.Integer:0,
@@ -237,14 +239,18 @@ class MotionData():
                 InputType.Selection:input_args[0],
                 InputType.Pos: [0,0]
             }[input_type]
+        print(self.getInput)
 
         DataDict[self.uuid] = self
         UIDict[self.uuid] = MotionUI(self.uuid)
         self.sprite.add_motion(self)
     def __json__(self):
+        self.reload_input()
         json = {
-            "uuid": self.uuid,
             "meta": self.meta.loc,
+            "uuid": self.uuid,
+            "inputs": self.getInput,
+            "undeletable": self.undeletable,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "sep_time": self.sep_time,
@@ -279,6 +285,9 @@ class MotionUI():
             Label(frame, text=name+":").grid(row=line, column=1, sticky=W)
             if input_type == InputType.Integer:
                 var = StringVar(value=0)
+                try: 
+                    if input_args[-1] != None: var.set(input_args[-1])
+                except: pass
                 entry = Entry(frame, textvariable=var)
                 entry.grid(row=line, column=2, sticky=W)
                 def done(event, var, data, name):
@@ -290,6 +299,9 @@ class MotionUI():
                 self.getFunc.append(partial(done, event=None, var=var, data=self.data, name=name))
             elif input_type == InputType.Float:
                 var = StringVar(value=0)
+                try: 
+                    if input_args[-1] != None: var.set(input_args[-1])
+                except: pass
                 entry = Entry(frame, textvariable=var)
                 entry.grid(row=line, column=2, sticky=W)
                 def done(event, var, data, name):
@@ -301,6 +313,9 @@ class MotionUI():
                 self.getFunc.append(partial(done, event=None, var=var, data=self.data, name=name))
             elif input_type == InputType.String:
                 var = StringVar()
+                try: 
+                    if input_args[-1] != None: var.set(input_args[-1])
+                except: pass
                 entry = Entry(frame, textvariable=var)
                 entry.grid(row=line, column=2, sticky=W)
                 def done(event, var, data, name):
@@ -310,6 +325,9 @@ class MotionUI():
                 self.getFunc.append(partial(done, event=None, var=var, data=self.data, name=name))
             elif input_type == InputType.Boolean:
                 var = StringVar()
+                try: 
+                    if input_args[-1] != None: var.set(input_args[-1])
+                except: pass
                 def done(data, name, selected):
                     fake_focus_in()
                     data.getInput[name] = {"true":True, "false":False}[selected]
@@ -317,6 +335,9 @@ class MotionUI():
                 self.getFunc.append(partial(done, data=self.data, name=name))
             elif input_type == InputType.File:
                 label = Label(frame, text="C:/", font="TkDefaultFont")
+                try: 
+                    if input_args[-1] != None: label.config(text=input_args[-1])
+                except: pass
                 label.grid(row=line, column=2, sticky=W)
                 def done(data, name, label):
                     fake_focus_in()
@@ -328,8 +349,10 @@ class MotionUI():
                 #If we do that, we'll have to set a file each time we make a new video file
             elif input_type == InputType.Selection:
                 var = StringVar()
+                try: 
+                    if input_args[-1] != None: var.set(input_args[0])
+                except: pass
                 def done(selected, data, name):
-                    print(selected)
                     fake_focus_in()
                     data.getInput[name] = selected
                 OptionMenu(frame, var, input_args[0], *input_args, command=partial(done, data=self.data, name=name)).grid(row=line, column=2, sticky=W)
@@ -337,6 +360,9 @@ class MotionUI():
             elif input_type == InputType.Pos:
                 varx = StringVar(value=0)
                 vary = StringVar(value=0)
+                try: 
+                    if input_args[-1] != None: varx.set(input_args[-1][0]); vary.set(input_args[-1][1])
+                except: pass
                 frame_entry = Frame(frame)
                 frame_entry.grid(row=line, column=2, sticky=W)
                 Label(frame_entry, text="[").pack(side=LEFT)
@@ -427,8 +453,9 @@ class MotionUI():
             try: self.__getattribute__(obj).destroy()
             except: pass
 class SpriteData():
-    def __init__(self, scene, name:str) -> None:
-        self.uuid = GetUUID()
+    def __init__(self, scene, name:str, __uuid:str=None, autoAddDefaultMotion=True) -> None:
+        if __uuid != None: self.uuid = __uuid
+        else: self.uuid = GetUUID()
         self.scene = scene
         self.init_name = name
         self.motions:List[MotionData] = []
@@ -438,13 +465,13 @@ class SpriteData():
         UIDict[self.uuid] = SpriteUI(self.uuid)
         self.scene.add_sprite(self)
 
-        MotionData(self, MotionMetaLib["default.ImageLoader"], undeletable=True)
-        MotionData(self, MotionMetaLib["default.SetPosition"], undeletable=True)
+        if autoAddDefaultMotion:
+            MotionData(self, MotionMetaLib["default.ImageLoader"], undeletable=True)
+            MotionData(self, MotionMetaLib["default.SetPosition"], undeletable=True)
     def __json__(self):
         json = {
-            "uuid": self.uuid,
             "name": self.UI.name,
-            "init_name": self.init_name,
+            "uuid": self.uuid,
             "dataset": self.dataset.__json__(),
             "motions": {}
         }
@@ -568,11 +595,12 @@ class SpriteUI():
         self.tk_add_motion.destroy()
 
 class SceneData():
-    def __init__(self, project, name:str, length:int) -> None:
+    def __init__(self, project, name:str, length:int, __uuid=None, __auto_sprite=True) -> None:
         self.project = project
         self.name = name
         self.length = length
-        self.uuid = GetUUID()
+        if __uuid != None: self.uuid = __uuid
+        else: self.uuid = GetUUID()
 
         self.sprites:List[SpriteData] = []
 
@@ -580,7 +608,7 @@ class SceneData():
 
         UIDict[self.uuid] = SceneUI(self.uuid)
         self.project.add_scene(self)
-        SpriteData(self, "New Sprite")
+        if __auto_sprite: SpriteData(self, "New Sprite")
     def __json__(self):
         json = {
             "name": self.name,
@@ -696,9 +724,10 @@ class SceneUI():
         self.frame.place_forget()
 
 class ProjectData():
-    def __init__(self, name:str="untitled", video_size=(1000, 1000)) -> None:
+    def __init__(self, name:str="untitled", video_size=(1000, 1000), __uuid=None) -> None:
         self.name = name
-        self.uuid = GetUUID()
+        if __uuid != None: self.uuid = __uuid
+        else: self.uuid = GetUUID()
         self.video_size = video_size
         DataDict[self.uuid] = self
 
@@ -881,7 +910,6 @@ class ProjectUI():
             scene.write(writer)
             self.update_extract_progress((n+1)/len(self.data.scenes)*100)
         writer.release()
-        #TODO 동영상 추출
     def save_as_new_name(self):
         loc = asksaveasfilename(title="Save As..", filetypes=[("MotionWriterProject", "*.mwp")])
         self.__save(loc)
@@ -942,7 +970,7 @@ class ProjectUI():
         GlobalData["sys.winRunning"] = True
         window.deiconify()
         window.mainloop()
-        
+
 # Import All MotionMeta
 __type_dict: Dict[str, InputType] = {
     "Integer":InputType.Integer,
@@ -964,10 +992,10 @@ for package_name in listdir(folder+"script"):
                 name = package_name.split(".")[0] + "." + init["name"]
                 inputs:Dict = init["inputs"]
                 description:str = init["description"]
-                covered_inputs:Tuple[Tuple[str, InputType, Tuple[Any, ...]], ...] = ()
+                covered_inputs:Tuple[Tuple[str, InputType, Tuple[Any, ...]], ...] = []
                 for input_name, [input_type, *input_args] in inputs.items():
                     if len(input_args) == 0: input_args = (None,)
-                    covered_inputs += ((input_name, __type_dict[input_type], *input_args),)
+                    covered_inputs += [[input_name, __type_dict[input_type], *input_args],]
                 data = {}
                 exec(zip_file.read(f.filename+"onTick.py").decode()+"\nfunc = onTick", data)
                 onTick = data["func"]
@@ -977,6 +1005,45 @@ for package_name in listdir(folder+"script"):
 try: del __type_dict, package_name, file_path, zip_file, f, init, name, inputs, description, covered_inputs, data, onTick
 except: pass
 
-pro = ProjectData()
-SceneData(pro, "Scene 1", 2000)
+def __load_project(loc:str):
+    with open(loc, "rb") as f:
+        data = loads(f.read())
+        project_name, project_uuid, project_video_size, scenes = data["name"], data["uuid"], data["video_size"], data["scenes"]
+        proData = ProjectData(project_name, project_video_size, project_uuid)
+        for scene in scenes.values():
+            print(scene)
+            scene_name, scene_uuid, scene_length, sprites = scene["name"], scene["uuid"], scene["length"], scene["sprites"]
+            scData = SceneData(proData, scene_name, scene_length, scene_uuid, False)
+            for sprite in sprites.values():
+                sprite_name, sprite_uuid, sprite_dataset, motions = sprite["name"], sprite["uuid"], sprite["dataset"], sprite["motions"]
+                spData = SpriteData(scData, sprite_name, sprite_uuid, False)
+                spData.dataset.x, spData.dataset.y = sprite_dataset.values()
+                for motion in motions.values():
+                    motion_meta, motion_uuid, motion_inputs, motion_undeletable, start, end, sep, hold = motion["meta"], motion["uuid"], motion["inputs"], motion["undeletable"], motion["start_time"], motion["end_time"], motion["sep_time"], motion["hold_time"]
+                    meta:MotionMeta = deepcopy(MotionMetaLib[motion_meta])
+                    for __type, __value in motion_inputs.items():
+                        for i in range(len(meta.inputs)):
+                            name, _, *v = meta.inputs[i]
+                            if name == __type:
+                                print(meta.inputs, i, __value)
+                                meta.inputs[i] += [__value]; break
+                        #meta.inputs[__type].value = __value
+                    moData = MotionData(spData, meta, bool(motion_undeletable), motion_uuid, motion_inputs)
+                    moData.start_time, moData.end_time, moData.sep_time, moData.hold_time = start, end, sep, hold
+
+                    moData.UI.entry_start.delete(0, END)
+                    moData.UI.entry_end.delete(0, END)
+                    moData.UI.entry_sep.delete(0, END)
+                    moData.UI.entry_hold.delete(0, END)
+                    moData.UI.entry_start.insert(END, moData.start_time)
+                    moData.UI.entry_end.insert(END, moData.end_time)
+                    moData.UI.entry_sep.insert(END, moData.sep_time)
+                    moData.UI.entry_hold.insert(END, moData.hold_time)
+
+    return proData
+try:
+    pro = __load_project(list(filter(lambda s: not s.startswith("--"), argv[1:]))[0])
+except IndexError:
+    pro = ProjectData()
+    SceneData(pro, "Scene 1", 40)
 pro.draw()

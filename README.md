@@ -4,21 +4,22 @@ _The Last Gif Editor, Ever._
 <br><br><br>
 MotionWriter helps to make gif video easily.
 Which can be used as effect or moving emoji.
-- Make video simply by scene and sprite.
-- Use some powerful tools.
-- ✨ See our magic! ✨
+
+> Make video simply by scene and sprite.
+> Use some powerful tools.
+> ✨ See our magic! ✨
 
 ## Features
-> - Make some gif video
-> - Supports powerful tools such as scene, sprite system
-> - Supports to make extention motions with some easy to use functions such as move, rotate (See [this](#how-image-generating-functions-such-as-move-rotate--works))
-> - Includes default basic motions
+> Make some gif video
+> Supports powerful tools such as scene, sprite system
+> Supports to make extention motions with some easy to use functions such as move, rotate (See [this](#how-image-generating-functions-such-as-move-rotate--works))
+> Includes default basic motions
 
 ## How image-generating functions (such as move, rotate, ...) works
  * move (transfer)<br>
    * get moved image for (a,b)
    * Function expression<br>
-     $x\prime=x+a$
+     $x\prime=x+a$<br>
      $y\prime=y+b$
  * rotate (rotation)<br>
    * get rotated image by $\theta$ as of (a,b)
@@ -32,7 +33,7 @@ Which can be used as effect or moving emoji.
 |:--:| :--- |
 | OS | ✔  Windows 10, 11 (64-bit) |
 ## Makers
->[Ice-Bukkit](https://github.com/Ice-Bukkit, "Goto github page of Ice-Bukkit") <br>
+>[Ice-Bukkit](https://github.com/Ice-Bukkit, "Goto github page of Ice-Bukkit") (Jun Seo)<br>
 >Yun Su <br>
 >Song Yunwoo <br>
 ## Update History
