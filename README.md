@@ -5,15 +5,15 @@ _The Last Gif Editor, Ever._
 MotionWriter helps to make gif video easily.
 Which can be used as effect or moving emoji.
 
-> Make video simply by scene and sprite.
-> Use some powerful tools.
-> ✨ See our magic! ✨
+> Make video simply by scene and sprite.<br>
+> Use some powerful tools.<br>
+> ✨ See our magic! ✨<br>
 
 ## Features
-> Make some gif video
-> Supports powerful tools such as scene, sprite system
-> Supports to make extention motions with some easy to use functions such as move, rotate (See [this](#how-image-generating-functions-such-as-move-rotate--works))
-> Includes default basic motions
+> Make some gif video<br>
+> Supports powerful tools such as scene, sprite system<br>
+> Supports to make extention motions with some easy to use functions such as move, rotate (See [this](#how-image-generating-functions-such-as-move-rotate--works))<br>
+> Includes default basic motions<br>
 
 ## How image-generating functions (such as move, rotate, ...) works
  * move (transfer)<br>
@@ -41,4 +41,4 @@ Which can be used as effect or moving emoji.
 | :-----: | :----- |
 |  alpha  | (Developing Test) </br> Making GUI and default system |
 ## License
-[GNU Affero General Public License v3.0](https://github.com/Ice-Bukkit/MotionWriter/blob/master/License, "Watch our license script.")
+[GNU Affero General Public License v3.0](https://github.com/Ice-Bukkit/MotionWriter/blob/master/License "Watch our license script.")
