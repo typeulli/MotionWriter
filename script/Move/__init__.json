@@ -1,0 +1,7 @@
+{
+    "name": "Move",
+    "inputs": {
+        "position": ["Pos"]
+    },
+    "description": "Move sprite to position"
+}

@@ -26,11 +26,15 @@ from numba import jit
 folder = dirname(realpath(__file__)) + "\\"
 del dirname, realpath
 argv = sys.argv
+def start_sub(*args):
+    from subprocess import call
+    try: call(folder+"Handler.exe "+" ".join(args) + " > nul")
+    except: pass
+    try: call("python "+folder+"Handler.py "+" ".join(args) + " > nul")
+    except: pass
 if (not "--debug" in argv):
     if not "--onHandler" in argv:
-        from subprocess import call
-        call(folder+"Handler.exe "+" ".join(argv[1:]) + " > nul")
-        call("python "+folder+"Handler.py "+" ".join(argv[1:]) + " > nul")
+        start_sub(*argv[1:])
         exit()
 del exists
 
@@ -38,7 +42,29 @@ del exists
 # prefab functions
 def imread(path):
     return cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2BGRA)#, cv2.IMREAD_UNCHANGED
-@jit(nopython=True, nogil=True)
+@jit
+def get_all_dot(img: ndarray) -> ndarray:
+    "return all dots in the image"
+    dots = zeros((img.shape[0], img.shape[1]), dtype=uint8)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            if img[i, j, 3] != 0:
+                dots[i, j] = 1
+    return dots
+@jit
+def fit_image(img: ndarray) -> ndarray:
+    work = 0
+    now_len = len(list([d for d in get_all_dot(img[1:-2, 1:-2]) if d != [0,0,0,0]]))
+    prev_len = now_len
+    while prev_len == now_len:
+        work += 1
+        img = img[1:-2, 1:-2]
+        prev_len = now_len
+        now_len = len(list([d for d in get_all_dot(img[1:-2, 1:-2]) if d != [0,0,0,0]]))
+    cv2.imshow(img)
+    cv2.waitKey(0)
+    return img
+@jit
 def auto_smooth_fill(img: ndarray) -> ndarray:
     "fill all empty point in img with average of connected points"
     distance = 4
@@ -55,15 +81,15 @@ def auto_smooth_fill(img: ndarray) -> ndarray:
                         count += 1
                     if count > 0: img[y, x] = b//count, g//count, r//count, a//count
 
-@jit(nopython=True, nogil=True)
+
+@jit
 def __rotated(pos:Tuple[int, int], center:Tuple[int, int], seta:int)->ndarray:
     seta = seta * pi / 180
     __sin, __cos = sin(seta), cos(seta)
     a, b = center
     x, y = pos
-    print(int((x-a)*__cos - (y-b)*__sin + a), int((x-a)*__sin + (y-b)*__cos + b))
-    return int((x-a)*__cos - (y-b)*__sin + a), int((x-a)*__sin + (y-b)*__cos + b)
-@jit(nopython=True, nogil=True)
+    return (x-a)*__cos - (y-b)*__sin + a, (x-a)*__sin + (y-b)*__cos + b
+@jit
 def rotate(img:ndarray, center:Tuple[int, int], seta:int)->ndarray:
     "return image of spinned img by seta and pos without using cv2 library"
     h, w, c = img.shape
@@ -72,38 +98,39 @@ def rotate(img:ndarray, center:Tuple[int, int], seta:int)->ndarray:
     __cos = cos(seta)
     __sin = sin(seta)
     img_list = []
-    manxw, manxh = -999999999, -999999999
+    max_w, max_h = -999999999, -999999999
     min_w, min_h = 999999999, 999999999
     for y in range(h):
         for x in range(w):
             nx = int((x-a)*__cos - (y-b)*__sin + a)
             ny = int((x-a)*__sin + (y-b)*__cos + b)
-            if nx > manxw: manxw = nx+2
-            if ny > manxh: manxh = ny+2
+            if nx > max_w: max_w = nx+2
+            if ny > max_h: max_h = ny+2
             if nx < min_w: min_w = nx
             if ny < min_h: min_h = ny
             img_list.append((x, y, nx, ny))
-    new_img = zeros((manxh-min_h, manxw-min_w, c), dtype=uint8)
+    new_img = zeros((max_h-min_h, max_w-min_w, c), dtype=uint8)
     for x, y, nx, ny in img_list:
-        try: new_img[ny-min_h, nx-min_w] = img[y, x]
-        except: pass
+        if not ( max_h-min_h > ny-min_h > 0 and max_w-min_w > nx-min_w > 0 ): continue
+        new_img[ny-min_h, nx-min_w] = img[y, x]
     auto_smooth_fill(new_img)
+    #new_img = fit_image(new_img)
     return new_img
-#if this function is decorated by @jit, it will be cause error (The program will exited without any error)
-#@jit(nopython=True, nogil=True) 
+@jit
 def stack_img(img:ndarray, stack:ndarray, pos:Tuple[int, int])->ndarray:
     "write img 'stack' on img 'img' considering of alpha channel"
+    pos = (int(pos[0]), int(pos[1]))
     h, w, c = stack.shape
     for y in range(h):
         for x in range(w):
-            try:
-                nx, ny = pos[0]+x, pos[1]+y
-                if nx<0 or ny<0: continue
-                b, g, r, a = img[ny, nx]
-                b2, g2, r2, a2 = stack[y, x]
-                alpha = a2/255
-                img[ny, nx] = [int(b2*alpha+b*(1-alpha)), int(g2*alpha+g*(1-alpha)), int(r2*alpha+r*(1-alpha)), 255]
-            except IndexError: pass
+            nx, ny = pos[0]+x, pos[1]+y
+            if nx<0 or ny<0: continue
+            if ny >= img.shape[1]-1 or nx >= img.shape[0]-1 or ny < 0 or nx < 0: continue
+            if y >= stack.shape[1]-1 or x >= stack.shape[0]-1 or y < 0 or x < 0: continue
+            b, g, r, a = img[ny, nx]
+            b2, g2, r2, a2 = stack[y, x]
+            alpha = a2/255
+            img[ny, nx] = [int(b2*alpha+b*(1-alpha)), int(g2*alpha+g*(1-alpha)), int(r2*alpha+r*(1-alpha)), 255]
     return img
 window = Tk()
 window.withdraw()
@@ -113,8 +140,9 @@ DataDict:Dict[str, Any] = {}
 UIDict:Dict[str, Any] = {}
 MotionMetaLib:Dict[str, Any] = {}
 GlobalData:Dict[str, Any] = {
-    "img.error":PhotoImage(file=folder+"res\\error.png"),
-    "img.x":PhotoImage(file=folder+"res\\x.png"),
+    "img.error":PhotoImage(file=folder+"res\\image\\error.png"),
+    "img.x":PhotoImage(file=folder+"res\\image\\x.png"),
+    "img.check":PhotoImage(file=folder+"res\\image\\check.png"),
 
     "font.noto.ui":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=10),
     "font.noto.ui.sliant":Font(family=folder+"res\\font\\NotoSansKR-Medium.otf", size=10, slant=ITALIC),
@@ -164,6 +192,18 @@ class Button(Button):
         self.config(bd=0, activebackground="#CCE4F7", activeforeground="#000000", relief=SOLID)
         self.bind("<Enter>", lambda event: self.config(fg="#000000", bg="#E5F1FB"))
         self.bind("<Leave>", lambda event: self.config(fg=fg, bg=bg))
+
+class TextButton(Label):
+    def __init__(self, container, *args, **kwargs):
+        self.command = kwargs["command"] if "command" in kwargs.keys() else lambda event: None
+        try: del kwargs["command"]
+        except: pass
+        super().__init__(container, *args, **kwargs)
+        self.config(foreground="#0000FF")
+        self.bind("<Enter>", lambda event: self.config(underline=True))
+        self.bind("<Leave>", lambda event: self.config(underline=False))
+        self.bind("<Button-1>", lambda event: self.command())
+
 
 class ScrollableFrame(Frame):
     def __init__(self, container, *args, **kwargs):
@@ -223,7 +263,7 @@ class MotionData():
         self.undeletable = undeletable
 
         self.start_time = 0
-        self.end_time = self.sprite.scene.length
+        self.end_time = self.sprite.scene.length if not ( self.meta.loc == "default.SetPosition" and self.undeletable ) else 0
         self.sep_time = 1
         self.hold_time = 1
         self.run_time = 0
@@ -237,9 +277,8 @@ class MotionData():
                 InputType.Boolean:True,
                 InputType.File:"C:/",
                 InputType.Selection:input_args[0],
-                InputType.Pos: [0,0]
+                InputType.Pos: [n//2 for n in self.sprite.scene.project.video_size]
             }[input_type]
-        print(self.getInput)
 
         DataDict[self.uuid] = self
         UIDict[self.uuid] = MotionUI(self.uuid)
@@ -270,7 +309,7 @@ class MotionData():
         if tick > self.end_time: return image
         if self.sep_time != 1 and (tick-self.start_time) % self.sep_time < self.hold_time: return image
         self.run_time += 1
-        img = self.meta.onTick(image, dataset, tick, self.getInput, GlobalData["functions"], (self.start_time, self.end_time, self.sep_time, self.run_time))
+        img = self.meta.onTick(image, dataset, tick, self.getInput, GlobalData["functions"], (self.start_time, self.end_time, self.sep_time, self.hold_time, self.run_time))
         return img
 
 class MotionUI():
@@ -339,11 +378,13 @@ class MotionUI():
                     if input_args[-1] != None: label.config(text=input_args[-1])
                 except: pass
                 label.grid(row=line, column=2, sticky=W)
-                def done(data, name, label):
+                def done(data, name, label, setOf=False):
                     fake_focus_in()
-                    data.getInput[name] = askopenfilename(filetypes=(("All Files", "*.*"),))
+                    if setOf: data.getInput[name] = askopenfilename(filetypes=(("All Files", "*.*"),))
+                    else: data.getInput[name] = label.cget("text")
                     label.config(text=data.getInput[name])
-                Button(frame, text="...", command=partial(done, data=self.data, name=name, label=label)).grid(row=line, column=3, sticky=W)
+                Button(frame, text="...", command=partial(done, data=self.data, name=name, label=label, setOf=True)).grid(row=line, column=3, sticky=W)
+                self.getFunc.append(partial(done, data=self.data, name=name, label=label))
                 #self.getFunc.append(partial(done, data=self.data, name=name, label=label))
                 #Because this is a file input, which is automatically updated, we don't need to add a function to the getFunc list
                 #If we do that, we'll have to set a file each time we make a new video file
@@ -398,18 +439,18 @@ class MotionUI():
             self.btn_delete = Button(self.frame_up, text="X", command=self.remove)
             self.btn_delete.pack(side="right")
         
-        self.var_start = StringVar(value=0)
-        self.var_end = StringVar(value=self.data.sprite.scene.length)
-        self.var_sep = StringVar(value=1)
-        self.var_hold = StringVar(value=1)
+        self.var_start = StringVar(value=self.data.start_time)
+        self.var_end   = StringVar(value=self.data.end_time)
+        self.var_sep   = StringVar(value=self.data.sep_time)
+        self.var_hold  = StringVar(value=self.data.hold_time)
         self.frame_run_info = Frame(self.frame_repos)
         self.frame_run_info.pack(fill="x")
         self.entry_start = Entry(self.frame_run_info, textvariable=self.var_start, width=4)
         self.entry_start.pack(side="left")
-        Label(self.frame_run_info, text="ticks(s)  to  ", font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
+        Label(self.frame_run_info, text="ticks(s)  to  ",   font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
         self.entry_end = Entry(self.frame_run_info, textvariable=self.var_end, width=4)
         self.entry_end.pack(side="left")
-        Label(self.frame_run_info, text="tick(s)  each  ", font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
+        Label(self.frame_run_info, text="tick(s)  each  ",  font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
         self.entry_sep = Entry(self.frame_run_info, textvariable=self.var_sep, width=4)
         self.entry_sep.pack(side="left")
         Label(self.frame_run_info, text="tick(s)  holds  ", font=GlobalData["font.noto.ui.sliant"]).pack(side="left")
@@ -458,6 +499,7 @@ class SpriteData():
         else: self.uuid = GetUUID()
         self.scene = scene
         self.init_name = name
+        self.image = None
         self.motions:List[MotionData] = []
         self.dataset:SpriteDataSet = SpriteDataSet()
 
@@ -496,20 +538,20 @@ class SpriteData():
         del UIDict[self.uuid]
         return True
     def write(self, tick, image, dataset):
-        def work_motion(sprite, dataset, image, tick, __sprite_num=0):
-            if __sprite_num > len(sprite.motions)-1: return image
+        def work_motion(sprite, img, dataset, tick, __sprite_num=0):
+            if __sprite_num > len(sprite.motions)-1: return img
             sprite.motions[__sprite_num].reload_input()
-            image = sprite.motions[__sprite_num].write(image, dataset, tick)
-            return work_motion(sprite, dataset, image, tick, __sprite_num+1)
-        loaded = work_motion(self, dataset, image, tick)
-        cv2.waitKey(1)
+            img = sprite.motions[__sprite_num].write(img, dataset, tick)
+            return work_motion(sprite, img, dataset, tick, __sprite_num+1)
+        loaded = work_motion(self, zeros((1, 1, 4), dtype=uint8), dataset, tick)
+        #cv2.imshow("Sprite", loaded)
+        #cv2.waitKey()
         shape = loaded.shape
         new_x_zero = dataset.x - shape[1]//2
         new_y_zero = dataset.y - shape[0]//2
         #print(self.x, self.y, shape)
         print(image.shape, loaded.shape, new_x_zero, new_y_zero)
         image = stack_img(image, loaded, (new_x_zero, new_y_zero))
-        print(1)
         # for x in range(shape[1]):
         #     for y in range(shape[0]):
         #         try: image[new_y_zero+y, new_x_zero+x] = loaded[y, x]
@@ -636,13 +678,14 @@ class SceneData():
         size = self.project.video_size
         copied_dataset = {}
         for sprite in self.sprites: copied_dataset[sprite.uuid] = deepcopy(sprite.dataset)
-        for tick in range(self.length):
+        r = list(range(self.length))
+        for i, tick in enumerate(r):
             tick_image = zeros((size[1], size[0], 4), dtype=uint8)
             tick_image[:, :, :3] = 255
             for sprite in self.sprites:
                 tick_image = sprite.write(tick, tick_image, copied_dataset[sprite.uuid])
-            print(tick_image.shape)
             writer.write(cv2.cvtColor(tick_image, cv2.COLOR_BGRA2BGR))
+            self.project.UI.update_extract_progress_sprite(int((i+1) / len(r) * 100))
     @property
     def UI(self): return UIDict[self.uuid]
 class SceneUI():
@@ -724,8 +767,10 @@ class SceneUI():
         self.frame.place_forget()
 
 class ProjectData():
-    def __init__(self, name:str="untitled", video_size=(1000, 1000), __uuid=None) -> None:
+    def __init__(self, name:str="untitled", video_size=(1000, 1000), loc=None, __uuid=None) -> None:
         self.name = name
+        self.loc = loc
+        self.saved = loc != None
         if __uuid != None: self.uuid = __uuid
         else: self.uuid = GetUUID()
         self.video_size = video_size
@@ -761,7 +806,6 @@ class ProjectUI():
     def __init__(self, uuid:str):
         self.uuid = uuid
 
-
         #Make Tk Window
         self.x, self.y = 1400, 750
         window.title(self.data.name)
@@ -783,7 +827,7 @@ class ProjectUI():
 
         file_help=Menu(menubar, tearoff=0)
         file_help.add_command(label = "새로 만들기")
-        file_help.add_command(label = "불러오기")
+        file_help.add_command(label = "불러오기", command = self.load)
         file_help.add_command(label = "저장하기")
         file_help.add_command(label = "다른 이름으로 저장하기", command=self.save_as_new_name)
         file_help.add_separator()
@@ -809,6 +853,20 @@ class ProjectUI():
         self.frame_license.place(x=0, y=0, relwidth=1, relheight=1)
 
         self.extract_path = StringVar(value="C:/Users/USER/Desktop/test.avi") #FIXME remove this
+    def close(self):
+        if not self.data.saved:
+            msgbox.askyesno("MotionWriter", "저장하지 않았습니다. 저장하시겠습니까?")
+            self.save_auto()
+        window.destroy()
+    def save_auto(self):
+        pass
+        #if self.data.loc != None:
+    def load(self):
+        filename = askopenfilename(filetypes=(("Motion Writer Project", "*.mwp"), ("All Files", "*.*")))
+        if not filename.endswith(".mwp"): return logger("WARN", "Not a Motion Writer Project", "IS_NOT_A_MWP", "InteractionWarn :: TypeWarn")
+        if filename == "": return
+        self.close()
+        start_sub(filename)
     def extract(self):
         self.win_extract = Toplevel(window)
         self.win_extract.title("내보내기")
@@ -870,46 +928,74 @@ class ProjectUI():
         btn_save_loc.config(command=partial(select_save_loc, entry_save_loc))
 
         frame_working_info = Frame(main_frame, bg="#FFFFFF")
-        label_working_info = Label(frame_working_info, text="작업 중 (0%)", font=GlobalData["font.noto.ui.bold"], anchor=W, bg="#FFFFFF")
-        label_working_info.pack(fill=X, padx=3, pady=10)
-        progress_bar = Progressbar(frame_working_info, orient=HORIZONTAL, mode="determinate", maximum=100)
-        progress_bar.pack(fill=X)
-        def __update(rate, label, progress_bar):
-            label.config(text="작업중 ("+str(rate)+"%)")
+        frame_working_info_scene = Frame(frame_working_info, bg="#FFFFFF")
+        frame_working_info_scene.pack(fill=X, expand=True)
+        label_working_info_scene = Label(frame_working_info_scene, text="장면 :: 0%", font=GlobalData["font.noto.ui.bold"], anchor=W, bg="#FFFFFF")
+        label_working_info_scene.pack(fill=X, padx=3, pady=10)
+        progress_bar_scene = Progressbar(frame_working_info_scene, orient=HORIZONTAL, mode="determinate", maximum=100)
+        progress_bar_scene.pack(fill=X)
+        frame_working_info_sprite = Frame(frame_working_info, bg="#FFFFFF")
+        frame_working_info_sprite.pack(fill=X, expand=True)
+        label_working_info_sprite = Label(frame_working_info_sprite, text="스프라이트 :: 0%", font=GlobalData["font.noto.ui.bold"], anchor=W, bg="#FFFFFF")
+        label_working_info_sprite.pack(fill=X, padx=3, pady=10)
+        progress_bar_sprite = Progressbar(frame_working_info_sprite, orient=HORIZONTAL, mode="determinate", maximum=100)
+        progress_bar_sprite.pack(fill=X)
+        def __update_scene(rate, label, progress_bar):
+            label.config(text=f"장면 :: {rate}%")
             progress_bar.config(value=rate)
             progress_bar.update()
-        self.update_extract_progress = partial(__update, label=label_working_info, progress_bar=progress_bar)
+        def __update_sprite(rate, label, progress_bar):
+            label.config(text=f"스프라이트 :: {rate}%")
+            progress_bar.config(value=rate)
+            progress_bar.update()
+        self.update_extract_progress_scene  = partial(__update_scene,  label=label_working_info_scene,  progress_bar=progress_bar_scene)
+        self.update_extract_progress_sprite = partial(__update_sprite, label=label_working_info_sprite, progress_bar=progress_bar_sprite)
 
         frame_done_info = Frame(main_frame, bg="#FFFFFF")
+        Label(frame_done_info, text="\n",                     bg="#FFFFFF").pack()
+        Label(frame_done_info, image=GlobalData["img.check"], bg="#FFFFFF").pack()
+        Label(frame_done_info, text="당신의 환상적인 동영상이 정삳적으로 추출되었습니다.", font=GlobalData["font.noto.ui.bold"], anchor=W, bg="#FFFFFF").pack()
+        self.label_done_path = Label(frame_done_info, text="위치 :: C:/Users/USER/Desktop/test.avi", font=GlobalData["font.noto.ui"], anchor=W, bg="#FFFFFF")
+        frame_done_link = Frame(frame_done_info, bg="#FFFFFF")
+        frame_done_link.pack()
+        Label(frame_done_link, text="당신의 환상적인 동영상을 확인하려면 ", font=GlobalData["font.noto.ui.sliant"], anchor=W, bg="#FFFFFF").pack(side=LEFT)
+        def open_video(self): __import__("os").startfile(self.extract_path.get())
+        TextButton(frame_done_link, text="여기", font=GlobalData["font.noto.ui.bold"], anchor=W, bg="#FFFFFF", cursor="hand2", command=partial(open_video, self)).pack(side=LEFT)
+        Label(frame_done_link, text="를 클릭하세요.", font=GlobalData["font.noto.ui.sliant"], anchor=W, bg="#FFFFFF").pack(side=LEFT)
+
 
         self.extract_win_mode = 0
         packs = [
             lambda: frame_save_info.pack(fill=BOTH, expand=True),
-            lambda: frame_working_info.pack(fill=X, pady=40),
-            lambda: frame_done_info.pack(fill=X)
+            lambda: frame_working_info.pack(fill=BOTH),
+            lambda: frame_done_info.pack()
         ]
         packs[0]()
         def next_or_done(btn_next_or_done, frames, labels, packs):
+            self.win_extract.focus()
             self.extract_win_mode += 1
-            if self.extract_win_mode >= 0: btn_next_or_done.config(text="다음 >")
-            if self.extract_win_mode >= 2: btn_next_or_done.config(text="마침")
+            if self.extract_win_mode >= 0: btn_next_or_done.config(text = "다음 >")
+            if self.extract_win_mode == 1: btn_next_or_done.config(state= DISABLED)
+            else:                          btn_next_or_done.config(state= NORMAL)
+            if self.extract_win_mode >= 2: btn_next_or_done.config(text = "마침")
             if self.extract_win_mode >= 3: self.win_extract.destroy(); return
             [label.config(state=DISABLED) for label in labels]
             labels[self.extract_win_mode].config(state=NORMAL)
             for frame in frames: frame.pack_forget(); frame.update()
             packs[self.extract_win_mode]()
-            if self.extract_win_mode == 1: self.__extract()
+            if self.extract_win_mode == 1: self.__extract(partial(next_or_done, btn_next_or_done, frames, labels, packs))
             self.win_extract.focus()
         btn_next_or_done.config(command=partial(next_or_done, btn_next_or_done, [frame_save_info, frame_working_info, frame_done_info], [label_process_1, label_process_2, label_process_3], packs))
         self.win_extract.deiconify()
-    def __extract(self):
+    def __extract(self, end_command):
         print("동영상 추출!", self.extract_path.get())
-        writer = cv2.VideoWriter(self.extract_path.get(),cv2.VideoWriter_fourcc(*'DIVX'), 20, self.data.video_size)
+        writer = cv2.VideoWriter(self.extract_path.get(), cv2.VideoWriter_fourcc(*'DIVX'), 20, self.data.video_size)
         for n, scene in enumerate(self.data.scenes):
             print(n, scene)
             scene.write(writer)
-            self.update_extract_progress((n+1)/len(self.data.scenes)*100)
+            self.update_extract_progress_scene((n+1)/len(self.data.scenes)*100)
         writer.release()
+        end_command()
     def save_as_new_name(self):
         loc = asksaveasfilename(title="Save As..", filetypes=[("MotionWriterProject", "*.mwp")])
         self.__save(loc)
@@ -1011,7 +1097,6 @@ def __load_project(loc:str):
         project_name, project_uuid, project_video_size, scenes = data["name"], data["uuid"], data["video_size"], data["scenes"]
         proData = ProjectData(project_name, project_video_size, project_uuid)
         for scene in scenes.values():
-            print(scene)
             scene_name, scene_uuid, scene_length, sprites = scene["name"], scene["uuid"], scene["length"], scene["sprites"]
             scData = SceneData(proData, scene_name, scene_length, scene_uuid, False)
             for sprite in sprites.values():
@@ -1025,7 +1110,6 @@ def __load_project(loc:str):
                         for i in range(len(meta.inputs)):
                             name, _, *v = meta.inputs[i]
                             if name == __type:
-                                print(meta.inputs, i, __value)
                                 meta.inputs[i] += [__value]; break
                         #meta.inputs[__type].value = __value
                     moData = MotionData(spData, meta, bool(motion_undeletable), motion_uuid, motion_inputs)
@@ -1043,7 +1127,7 @@ def __load_project(loc:str):
     return proData
 try:
     pro = __load_project(list(filter(lambda s: not s.startswith("--"), argv[1:]))[0])
-except IndexError:
+except:
     pro = ProjectData()
-    SceneData(pro, "Scene 1", 40)
+    SceneData(pro, "Scene 1", 100)
 pro.draw()

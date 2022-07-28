@@ -1,0 +1,90 @@
+{
+    "name": "untitled",
+    "uuid": "ef71bec1-41d0-4af2-ba73-25131906786c",
+    "video_size": [
+        1000,
+        1000
+    ],
+    "scenes": {
+        "Scene 1": {
+            "name": "Scene 1",
+            "length": 100,
+            "uuid": "c22cf052-012f-462d-9cad-2d10fcb7a178",
+            "sprites": {
+                "New Sprite": {
+                    "name": "New Sprite",
+                    "uuid": "8c6d7ccb-a4c1-448b-b72a-4fa8db595b30",
+                    "dataset": {
+                        "x": 500,
+                        "y": 500
+                    },
+                    "motions": {
+                        "7f6d457b-786d-4039-873e-f41048e2d0db": {
+                            "meta": "default.ImageLoader",
+                            "uuid": "7f6d457b-786d-4039-873e-f41048e2d0db",
+                            "inputs": {
+                                "file": "D:/Project/MotionWriter/res/image/egg.jpg",
+                                "position": [
+                                    500,
+                                    250
+                                ],
+                                "angle": 10,
+                                "center": [
+                                    500,
+                                    500
+                                ]
+                            },
+                            "undeletable": true,
+                            "start_time": 0,
+                            "end_time": 100,
+                            "sep_time": 1,
+                            "hold_time": 1
+                        },
+                        "fe03131f-3538-4905-86ee-5e7e34900249": {
+                            "meta": "default.SetPosition",
+                            "uuid": "fe03131f-3538-4905-86ee-5e7e34900249",
+                            "inputs": {
+                                "file": "C:/",
+                                "position": [
+                                    500,
+                                    250
+                                ],
+                                "angle": 10,
+                                "center": [
+                                    500,
+                                    500
+                                ]
+                            },
+                            "undeletable": true,
+                            "start_time": 0,
+                            "end_time": 0,
+                            "sep_time": 1,
+                            "hold_time": 1
+                        },
+                        "3ea1265d-eeb5-47a9-8b5d-ab538a523802": {
+                            "meta": "default.Rotation",
+                            "uuid": "3ea1265d-eeb5-47a9-8b5d-ab538a523802",
+                            "inputs": {
+                                "file": "C:/",
+                                "position": [
+                                    500,
+                                    250
+                                ],
+                                "angle": 10,
+                                "center": [
+                                    500,
+                                    500
+                                ]
+                            },
+                            "undeletable": false,
+                            "start_time": 0,
+                            "end_time": 100,
+                            "sep_time": 1,
+                            "hold_time": 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

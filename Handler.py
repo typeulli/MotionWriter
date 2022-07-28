@@ -10,5 +10,7 @@ while {True:exists(file_path+".log"), False:exists(file_path+"-"+str(n)+".log")}
 if n > 0: file_path += "-"+str(n)
 file_path += ".log"
 #open(file_path, "w").close()
-call(folder+"MotionWriter.exe " + " ".join(argv[1:]) + " --onHandler >> "+file_path)
-call("python "+folder+"MotionWriter.py " + " ".join(argv[1:]) + " --onHandler >> "+file_path)
+try: call(folder+"MotionWriter.exe " + " ".join(argv[1:]) + " --onHandler >> "+file_path)
+except: pass
+try: call("python "+folder+"MotionWriter.py " + " ".join(argv[1:]) + " --onHandler >> "+file_path)
+except: pass
