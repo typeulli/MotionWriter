@@ -1,5 +1,5 @@
 {
-    "name": "Move",
+    "name": "MoveToAbstract",
     "inputs": {
         "position": ["Pos"]
     },

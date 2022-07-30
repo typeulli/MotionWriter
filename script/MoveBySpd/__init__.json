@@ -1,0 +1,8 @@
+{
+    "name": "MoveBySpd",
+    "inputs": {
+        "angle": ["Integer"],
+        "speed": ["Integer"]
+    },
+    "description": "Move sprite by speed"
+}

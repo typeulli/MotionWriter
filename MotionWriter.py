@@ -237,6 +237,7 @@ class SpriteDataSet():
     def __init__(self)->None:
         self.x, self.y = 500, 500 #FIXME remove this
         self.start_time = 0
+    
     def __json__(self):
         return {"x":self.x, "y":self.y}
 class InputType(Enum):
@@ -309,6 +310,7 @@ class MotionData():
         if tick > self.end_time: return image
         if self.sep_time != 1 and (tick-self.start_time) % self.sep_time < self.hold_time: return image
         self.run_time += 1
+        print(self.meta.loc)
         img = self.meta.onTick(image, dataset, tick, self.getInput, GlobalData["functions"], (self.start_time, self.end_time, self.sep_time, self.hold_time, self.run_time))
         return img
 
@@ -1129,5 +1131,5 @@ try:
     pro = __load_project(list(filter(lambda s: not s.startswith("--"), argv[1:]))[0])
 except:
     pro = ProjectData()
-    SceneData(pro, "Scene 1", 100)
+    SceneData(pro, "Scene 1", 200)
 pro.draw()

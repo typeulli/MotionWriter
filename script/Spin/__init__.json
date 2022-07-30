@@ -1,0 +1,8 @@
+{
+    "name": "Spin",
+    "inputs": {
+        "angle": ["Integer"],
+        "center": ["Pos", [-1, -1]]
+    },
+    "description": "Rotations an image"
+}

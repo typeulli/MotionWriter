@@ -1,3 +1,3 @@
 @echo off
-pyinstaller Handler.py --noconsole
+pyinstaller Handler.py -i icon.ico --noconsole
 pause

@@ -1,3 +1,3 @@
 @echo off
-pyinstaller MotionWriter.py --noconsole
+pyinstaller MotionWriter.py -i icon.ico --noconsole
 pause
